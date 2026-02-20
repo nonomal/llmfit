@@ -318,7 +318,11 @@ const OLLAMA_MAPPINGS: &[(&str, &str)] = &[
 /// Look up the Ollama tag for an HF repo name. Returns the first match
 /// from `OLLAMA_MAPPINGS`, or `None` if the model has no known Ollama equivalent.
 fn lookup_ollama_tag(hf_name: &str) -> Option<&'static str> {
-    let repo = hf_name.split('/').last().unwrap_or(hf_name).to_lowercase();
+    let repo = hf_name
+        .split('/')
+        .next_back()
+        .unwrap_or(hf_name)
+        .to_lowercase();
     OLLAMA_MAPPINGS
         .iter()
         .find(|&&(hf_suffix, _)| repo == hf_suffix)

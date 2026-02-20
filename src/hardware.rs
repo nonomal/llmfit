@@ -204,15 +204,15 @@ impl SystemSpecs {
                 continue;
             }
             let parts: Vec<&str> = line.splitn(2, ',').collect();
-            if let Some(vram_str) = parts.first() {
-                if let Ok(vram_mb) = vram_str.trim().parse::<f64>() {
-                    total_vram_mb += vram_mb;
-                    count += 1;
-                    if first_name.is_none() {
-                        if let Some(name) = parts.get(1) {
-                            first_name = Some(name.trim().to_string());
-                        }
-                    }
+            if let Some(vram_str) = parts.first()
+                && let Ok(vram_mb) = vram_str.trim().parse::<f64>()
+            {
+                total_vram_mb += vram_mb;
+                count += 1;
+                if first_name.is_none()
+                    && let Some(name) = parts.get(1)
+                {
+                    first_name = Some(name.trim().to_string());
                 }
             }
         }
@@ -266,12 +266,11 @@ impl SystemSpecs {
                 if let Some(val) = line
                     .split_whitespace()
                     .filter_map(|w| w.parse::<u64>().ok())
-                    .last()
+                    .next_back()
+                    && val > 0
                 {
-                    if val > 0 {
-                        total_vram_bytes += val;
-                        gpu_count += 1;
-                    }
+                    total_vram_bytes += val;
+                    gpu_count += 1;
                 }
             }
         }
@@ -297,12 +296,12 @@ impl SystemSpecs {
                 // Look for "Card Series" or "Card Model" lines
                 for line in text.lines() {
                     let lower = line.to_lowercase();
-                    if lower.contains("card series") || lower.contains("card model") {
-                        if let Some(val) = line.split(':').nth(1) {
-                            let name = val.trim().to_string();
-                            if !name.is_empty() {
-                                return Some(name);
-                            }
+                    if (lower.contains("card series") || lower.contains("card model"))
+                        && let Some(val) = line.split(':').nth(1)
+                    {
+                        let name = val.trim().to_string();
+                        if !name.is_empty() {
+                            return Some(name);
                         }
                     }
                 }
@@ -355,12 +354,11 @@ impl SystemSpecs {
             // Found an AMD GPU. Try to read VRAM.
             let mut vram_gb: Option<f64> = None;
             let vram_path = device_path.join("mem_info_vram_total");
-            if let Ok(vram_str) = std::fs::read_to_string(&vram_path) {
-                if let Ok(vram_bytes) = vram_str.trim().parse::<u64>() {
-                    if vram_bytes > 0 {
-                        vram_gb = Some(vram_bytes as f64 / (1024.0 * 1024.0 * 1024.0));
-                    }
-                }
+            if let Ok(vram_str) = std::fs::read_to_string(&vram_path)
+                && let Ok(vram_bytes) = vram_str.trim().parse::<u64>()
+                && vram_bytes > 0
+            {
+                vram_gb = Some(vram_bytes as f64 / (1024.0 * 1024.0 * 1024.0));
             }
 
             // Try to get GPU name from lspci
@@ -404,12 +402,11 @@ impl SystemSpecs {
                 if let Some(desc) = line.split("]:").last() {
                     let desc: &str = desc.trim();
                     // Try to extract the bracketed name like "[Radeon RX 5700 XT]"
-                    if let Some(start) = desc.rfind('[') {
-                        if let Some(end) = desc.rfind(']') {
-                            if start < end {
-                                return Some(desc[start + 1..end].to_string());
-                            }
-                        }
+                    if let Some(start) = desc.rfind('[')
+                        && let Some(end) = desc.rfind(']')
+                        && start < end
+                    {
+                        return Some(desc[start + 1..end].to_string());
                     }
                     return Some(desc.to_string());
                 }
@@ -431,16 +428,13 @@ impl SystemSpecs {
             .arg("-Command")
             .arg("Get-CimInstance Win32_VideoController | Select-Object Name,AdapterRAM | ForEach-Object { $_.Name + '|' + $_.AdapterRAM }")
             .output()
-        {
-            if output.status.success() {
-                if let Ok(text) = String::from_utf8(output.stdout) {
+            && output.status.success()
+                && let Ok(text) = String::from_utf8(output.stdout) {
                     let gpus = Self::parse_windows_gpu_list(&text);
                     if !gpus.is_empty() {
                         return gpus;
                     }
                 }
-            }
-        }
 
         // Fallback to wmic for older Windows
         Self::detect_gpu_windows_wmic_list()
@@ -582,38 +576,36 @@ impl SystemSpecs {
 
                 // Check vendor ID matches Intel (0x8086)
                 let vendor_path = device_path.join("vendor");
-                if let Ok(vendor) = std::fs::read_to_string(&vendor_path) {
-                    if vendor.trim() != "0x8086" {
-                        continue;
-                    }
+                if let Ok(vendor) = std::fs::read_to_string(&vendor_path)
+                    && vendor.trim() != "0x8086"
+                {
+                    continue;
                 }
 
                 // Look for total VRAM via DRM memory info
                 // Intel discrete GPUs expose this under drm/card*/device/mem_info_vram_total
                 let vram_path = card_path.join("device/mem_info_vram_total");
-                if let Ok(vram_str) = std::fs::read_to_string(&vram_path) {
-                    if let Ok(vram_bytes) = vram_str.trim().parse::<u64>() {
-                        if vram_bytes > 0 {
-                            let vram_gb = vram_bytes as f64 / (1024.0 * 1024.0 * 1024.0);
-                            return Some(vram_gb);
-                        }
-                    }
+                if let Ok(vram_str) = std::fs::read_to_string(&vram_path)
+                    && let Ok(vram_bytes) = vram_str.trim().parse::<u64>()
+                    && vram_bytes > 0
+                {
+                    let vram_gb = vram_bytes as f64 / (1024.0 * 1024.0 * 1024.0);
+                    return Some(vram_gb);
                 }
 
                 // For integrated Intel GPUs, check if it's an Arc-class device
                 // by looking for "Arc" in the device name via lspci
-                if let Ok(output) = std::process::Command::new("lspci").output() {
-                    if output.status.success() {
-                        if let Ok(text) = String::from_utf8(output.stdout) {
-                            for line in text.lines() {
-                                let lower = line.to_lowercase();
-                                if lower.contains("intel") && lower.contains("arc") {
-                                    // Intel Arc integrated (e.g. Arc Graphics in Meteor Lake)
-                                    // These share system RAM; report None for VRAM and
-                                    // let the caller know a GPU exists.
-                                    return Some(0.0);
-                                }
-                            }
+                if let Ok(output) = std::process::Command::new("lspci").output()
+                    && output.status.success()
+                    && let Ok(text) = String::from_utf8(output.stdout)
+                {
+                    for line in text.lines() {
+                        let lower = line.to_lowercase();
+                        if lower.contains("intel") && lower.contains("arc") {
+                            // Intel Arc integrated (e.g. Arc Graphics in Meteor Lake)
+                            // These share system RAM; report None for VRAM and
+                            // let the caller know a GPU exists.
+                            return Some(0.0);
                         }
                     }
                 }
@@ -622,15 +614,14 @@ impl SystemSpecs {
 
         // Fallback: check lspci directly for Intel Arc devices
         // (covers cases where sysfs isn't available or card dirs don't exist)
-        if let Ok(output) = std::process::Command::new("lspci").output() {
-            if output.status.success() {
-                if let Ok(text) = String::from_utf8(output.stdout) {
-                    for line in text.lines() {
-                        let lower = line.to_lowercase();
-                        if lower.contains("intel") && lower.contains("arc") {
-                            return Some(0.0);
-                        }
-                    }
+        if let Ok(output) = std::process::Command::new("lspci").output()
+            && output.status.success()
+            && let Ok(text) = String::from_utf8(output.stdout)
+        {
+            for line in text.lines() {
+                let lower = line.to_lowercase();
+                if lower.contains("intel") && lower.contains("arc") {
+                    return Some(0.0);
                 }
             }
         }
@@ -753,12 +744,13 @@ impl SystemSpecs {
     pub fn with_gpu_memory_override(mut self, vram_gb: f64) -> Self {
         if self.gpus.is_empty() {
             // No GPU was detected; create a synthetic one.
-            let backend =
-                if cfg!(target_arch = "aarch64") || self.cpu_name.to_lowercase().contains("apple") {
-                    GpuBackend::Metal
-                } else {
-                    GpuBackend::Cuda
-                };
+            let backend = if cfg!(target_arch = "aarch64")
+                || self.cpu_name.to_lowercase().contains("apple")
+            {
+                GpuBackend::Metal
+            } else {
+                GpuBackend::Cuda
+            };
             self.gpus.push(GpuInfo {
                 name: "User-specified GPU".to_string(),
                 vram_gb: Some(vram_gb),
@@ -867,9 +859,9 @@ pub fn parse_memory_size(s: &str) -> Option<f64> {
 
     let suffix = suffix.trim().to_lowercase();
     match suffix.as_str() {
-        "g" | "gb" | "gib" | "" => Some(value),                // already in GB
-        "m" | "mb" | "mib" => Some(value / 1024.0),            // MB → GB
-        "t" | "tb" | "tib" => Some(value * 1024.0),            // TB → GB
+        "g" | "gb" | "gib" | "" => Some(value),     // already in GB
+        "m" | "mb" | "mib" => Some(value / 1024.0), // MB → GB
+        "t" | "tb" | "tib" => Some(value * 1024.0), // TB → GB
         _ => None,
     }
 }

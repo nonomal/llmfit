@@ -185,7 +185,13 @@ fn run_tui(memory_override: &Option<String>) -> std::io::Result<()> {
     Ok(())
 }
 
-fn run_recommend(limit: usize, use_case: Option<String>, min_fit: String, json: bool, memory_override: &Option<String>) {
+fn run_recommend(
+    limit: usize,
+    use_case: Option<String>,
+    min_fit: String,
+    json: bool,
+    memory_override: &Option<String>,
+) {
     let specs = detect_specs(memory_override);
     let db = ModelDatabase::new();
 
