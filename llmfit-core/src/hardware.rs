@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use sysinfo::System;
 
 /// The acceleration backend for inference speed estimation.
@@ -179,7 +180,7 @@ impl SystemSpecs {
     }
 
     /// Detect NVIDIA GPUs via nvidia-smi. Returns one GpuInfo per unique model,
-    /// with count and aggregated VRAM for same-model multi-GPU setups.
+    /// with count and per-card VRAM for same-model multi-GPU setups.
     fn detect_nvidia_gpus() -> Vec<GpuInfo> {
         let output = match std::process::Command::new("nvidia-smi")
             .arg("--query-gpu=memory.total,name")
@@ -195,50 +196,67 @@ impl SystemSpecs {
             Err(_) => return Vec::new(),
         };
 
-        let mut total_vram_mb: f64 = 0.0;
-        let mut count: u32 = 0;
-        let mut first_name: Option<String> = None;
+        Self::parse_nvidia_smi_list(&text)
+    }
+
+    /// Parse `nvidia-smi --query-gpu=memory.total,name --format=csv,noheader,nounits`.
+    /// Groups same-model cards and keeps per-card VRAM (never sums across cards).
+    fn parse_nvidia_smi_list(text: &str) -> Vec<GpuInfo> {
+        let mut grouped: BTreeMap<String, (u32, f64)> = BTreeMap::new();
+
         for line in text.lines() {
             let line = line.trim();
             if line.is_empty() {
                 continue;
             }
             let parts: Vec<&str> = line.splitn(2, ',').collect();
-            if let Some(vram_str) = parts.first()
-                && let Ok(vram_mb) = vram_str.trim().parse::<f64>()
-            {
-                total_vram_mb += vram_mb;
-                count += 1;
-                if first_name.is_none()
-                    && let Some(name) = parts.get(1)
-                {
-                    first_name = Some(name.trim().to_string());
-                }
+
+            let name = parts
+                .get(1)
+                .map(|s| s.trim())
+                .filter(|s| !s.is_empty())
+                .unwrap_or("NVIDIA GPU")
+                .to_string();
+
+            let parsed_vram_mb = parts
+                .first()
+                .and_then(|s| s.trim().parse::<f64>().ok())
+                .unwrap_or(0.0);
+            let vram_mb = if parsed_vram_mb > 0.0 {
+                parsed_vram_mb
+            } else {
+                estimate_vram_from_name(&name) * 1024.0
+            };
+
+            let entry = grouped.entry(name).or_insert((0, 0.0));
+            entry.0 += 1;
+            if vram_mb > entry.1 {
+                entry.1 = vram_mb;
             }
         }
 
-        if count == 0 {
+        if grouped.is_empty() {
             return Vec::new();
         }
 
-        let name = first_name.unwrap_or_else(|| "NVIDIA GPU".to_string());
-        let mut vram_gb = total_vram_mb / 1024.0;
-        if vram_gb < 0.1 {
-            vram_gb = estimate_vram_from_name(&name);
-        }
-        let vram = if vram_gb > 0.0 { Some(vram_gb) } else { None };
-
-        vec![GpuInfo {
-            name,
-            vram_gb: vram,
-            backend: GpuBackend::Cuda,
-            count,
-            unified_memory: false,
-        }]
+        grouped
+            .into_iter()
+            .map(|(name, (count, per_card_vram_mb))| GpuInfo {
+                name,
+                vram_gb: if per_card_vram_mb > 0.0 {
+                    Some(per_card_vram_mb / 1024.0)
+                } else {
+                    None
+                },
+                backend: GpuBackend::Cuda,
+                count,
+                unified_memory: false,
+            })
+            .collect()
     }
 
     /// Detect AMD GPU via rocm-smi (available on Linux with ROCm installed).
-    /// Parses VRAM total and GPU name from rocm-smi output.
+    /// Parses per-card VRAM and GPU name from rocm-smi output.
     fn detect_amd_gpu_rocm_info() -> Option<GpuInfo> {
         // Try rocm-smi --showmeminfo vram for VRAM
         let vram_output = std::process::Command::new("rocm-smi")
@@ -257,7 +275,7 @@ impl SystemSpecs {
         // Typical format includes a line like:
         //   "GPU[0] : vram Total Memory (B): 8589934592"
         // or in table format with "Total" and bytes.
-        let mut total_vram_bytes: u64 = 0;
+        let mut per_gpu_vram_bytes: Vec<u64> = Vec::new();
         let mut gpu_count: u32 = 0;
         for line in vram_text.lines() {
             let lower = line.to_lowercase();
@@ -269,7 +287,7 @@ impl SystemSpecs {
                     .next_back()
                     && val > 0
                 {
-                    total_vram_bytes += val;
+                    per_gpu_vram_bytes.push(val);
                     gpu_count += 1;
                 }
             }
@@ -309,8 +327,9 @@ impl SystemSpecs {
             });
 
         let name = gpu_name.unwrap_or_else(|| "AMD GPU".to_string());
-        let vram_gb = if total_vram_bytes > 0 {
-            Some(total_vram_bytes as f64 / (1024.0 * 1024.0 * 1024.0))
+        let max_per_gpu_bytes = per_gpu_vram_bytes.into_iter().max().unwrap_or(0);
+        let vram_gb = if max_per_gpu_bytes > 0 {
+            Some(max_per_gpu_bytes as f64 / (1024.0 * 1024.0 * 1024.0))
         } else {
             let est = estimate_vram_from_name(&name);
             if est > 0.0 { Some(est) } else { None }
@@ -801,7 +820,7 @@ impl SystemSpecs {
                         Some(vram) if vram > 0.0 => {
                             if gpu.count > 1 {
                                 println!(
-                                    "{}{} x{} ({:.2} GB VRAM total, {})",
+                                    "{}{} x{} ({:.2} GB VRAM each, {})",
                                     prefix,
                                     gpu.name,
                                     gpu.count,
@@ -1052,4 +1071,33 @@ fn estimate_vram_from_name(name: &str) -> f64 {
         return 8.0;
     }
     0.0
+}
+
+#[cfg(test)]
+mod tests {
+    use super::SystemSpecs;
+
+    #[test]
+    fn test_parse_nvidia_smi_does_not_sum_multi_gpu_vram() {
+        let text = "24564, NVIDIA GeForce RTX 4090\n24564, NVIDIA GeForce RTX 4090\n";
+        let gpus = SystemSpecs::parse_nvidia_smi_list(text);
+
+        assert_eq!(gpus.len(), 1);
+        assert_eq!(gpus[0].count, 2);
+        let vram = gpus[0]
+            .vram_gb
+            .expect("VRAM should be parsed for RTX 4090 entries");
+        // 24564 MiB ~= 23.99 GiB; must stay single-card VRAM, not 2x summed.
+        assert!(vram > 23.0 && vram < 25.0, "unexpected VRAM value: {vram}");
+    }
+
+    #[test]
+    fn test_parse_nvidia_smi_keeps_distinct_models() {
+        let text = "24564, NVIDIA GeForce RTX 4090\n16376, NVIDIA GeForce RTX 4080\n";
+        let gpus = SystemSpecs::parse_nvidia_smi_list(text);
+
+        assert_eq!(gpus.len(), 2);
+        assert!(gpus.iter().any(|g| g.name.contains("4090") && g.count == 1));
+        assert!(gpus.iter().any(|g| g.name.contains("4080") && g.count == 1));
+    }
 }

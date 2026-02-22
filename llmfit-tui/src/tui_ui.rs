@@ -63,7 +63,7 @@ fn draw_system_bar(frame: &mut Frame, app: &App, area: Rect) {
                 Some(vram) if vram > 0.0 => {
                     if primary.count > 1 {
                         format!(
-                            "{} x{} ({:.1} GB, {})",
+                            "{} x{} ({:.1} GB each, {})",
                             primary.name, primary.count, vram, backend
                         )
                     } else {
