@@ -2,3 +2,4 @@
 llmfit
 /docs
 llmfit-desktop/gen/schemas/*
+data/gguf_sources_cache.json

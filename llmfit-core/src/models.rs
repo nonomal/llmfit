@@ -126,6 +126,18 @@ pub struct LlmModel {
     pub active_parameters: Option<u64>,
     #[serde(default)]
     pub release_date: Option<String>,
+    /// Known GGUF download sources (e.g. unsloth, bartowski repos on HuggingFace)
+    #[serde(default)]
+    pub gguf_sources: Vec<GgufSource>,
+}
+
+/// A known GGUF download source for a model on HuggingFace.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GgufSource {
+    /// HuggingFace repo ID (e.g. "unsloth/Llama-3.1-8B-Instruct-GGUF")
+    pub repo: String,
+    /// Provider who published the GGUF (e.g. "unsloth", "bartowski")
+    pub provider: String,
 }
 
 impl LlmModel {
@@ -265,6 +277,8 @@ struct HfModelEntry {
     active_parameters: Option<u64>,
     #[serde(default)]
     release_date: Option<String>,
+    #[serde(default)]
+    gguf_sources: Vec<GgufSource>,
 }
 
 const HF_MODELS_JSON: &str = include_str!("../data/hf_models.json");
@@ -302,6 +316,7 @@ impl ModelDatabase {
                 active_experts: e.active_experts,
                 active_parameters: e.active_parameters,
                 release_date: e.release_date,
+                gguf_sources: e.gguf_sources,
             })
             .collect();
 
@@ -393,6 +408,7 @@ mod tests {
             active_experts: None,
             active_parameters: None,
             release_date: None,
+            gguf_sources: vec![],
         };
 
         // Large budget should return mlx-8bit (best in MLX hierarchy)
@@ -461,6 +477,7 @@ mod tests {
             active_experts: None,
             active_parameters: None,
             release_date: None,
+            gguf_sources: vec![],
         };
         assert_eq!(model.params_b(), 7.0);
     }
@@ -483,6 +500,7 @@ mod tests {
             active_experts: None,
             active_parameters: None,
             release_date: None,
+            gguf_sources: vec![],
         };
         assert_eq!(model.params_b(), 13.0);
     }
@@ -505,6 +523,7 @@ mod tests {
             active_experts: None,
             active_parameters: None,
             release_date: None,
+            gguf_sources: vec![],
         };
         assert_eq!(model.params_b(), 0.5);
     }
@@ -527,6 +546,7 @@ mod tests {
             active_experts: None,
             active_parameters: None,
             release_date: None,
+            gguf_sources: vec![],
         };
 
         let mem = model.estimate_memory_gb("Q4_K_M", 4096);
@@ -557,6 +577,7 @@ mod tests {
             active_experts: None,
             active_parameters: None,
             release_date: None,
+            gguf_sources: vec![],
         };
 
         // Large budget should return best quant
@@ -593,6 +614,7 @@ mod tests {
             active_experts: None,
             active_parameters: None,
             release_date: None,
+            gguf_sources: vec![],
         };
         assert!(dense_model.moe_active_vram_gb().is_none());
 
@@ -613,6 +635,7 @@ mod tests {
             active_experts: Some(2),
             active_parameters: Some(12_900_000_000),
             release_date: None,
+            gguf_sources: vec![],
         };
         let vram = moe_model.moe_active_vram_gb();
         assert!(vram.is_some());
@@ -641,6 +664,7 @@ mod tests {
             active_experts: None,
             active_parameters: None,
             release_date: None,
+            gguf_sources: vec![],
         };
         assert!(dense_model.moe_offloaded_ram_gb().is_none());
 
@@ -661,6 +685,7 @@ mod tests {
             active_experts: Some(2),
             active_parameters: Some(12_900_000_000),
             release_date: None,
+            gguf_sources: vec![],
         };
         let offloaded = moe_model.moe_offloaded_ram_gb();
         assert!(offloaded.is_some());
@@ -691,6 +716,7 @@ mod tests {
             active_experts: None,
             active_parameters: None,
             release_date: None,
+            gguf_sources: vec![],
         };
         assert_eq!(UseCase::from_model(&model), UseCase::Coding);
     }
@@ -713,6 +739,7 @@ mod tests {
             active_experts: None,
             active_parameters: None,
             release_date: None,
+            gguf_sources: vec![],
         };
         assert_eq!(UseCase::from_model(&model), UseCase::Embedding);
     }
@@ -735,6 +762,7 @@ mod tests {
             active_experts: None,
             active_parameters: None,
             release_date: None,
+            gguf_sources: vec![],
         };
         assert_eq!(UseCase::from_model(&model), UseCase::Reasoning);
     }

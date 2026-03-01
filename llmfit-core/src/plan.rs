@@ -657,6 +657,7 @@ mod tests {
             active_experts: None,
             active_parameters: None,
             release_date: None,
+            gguf_sources: vec![],
         }
     }
 

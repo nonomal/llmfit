@@ -894,6 +894,7 @@ mod tests {
             active_experts: None,
             active_parameters: None,
             release_date: None,
+            gguf_sources: vec![],
         }
     }
 
@@ -1067,6 +1068,7 @@ mod tests {
             active_experts: Some(2),
             active_parameters: Some(12_900_000_000),
             release_date: None,
+            gguf_sources: vec![],
         };
         let mut system = test_system(64.0, true, Some(8.0));
         system.backend = GpuBackend::Cuda;
@@ -1097,6 +1099,7 @@ mod tests {
             active_experts: None,
             active_parameters: None,
             release_date: None,
+            gguf_sources: vec![],
         };
         let system = test_system(12.0, true, Some(8.0));
 

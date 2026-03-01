@@ -454,6 +454,121 @@ def scrape_model(repo_id: str) -> dict | None:
 
 
 # ---------------------------------------------------------------------------
+# GGUF source enrichment — find pre-quantized GGUF repos for known models
+# ---------------------------------------------------------------------------
+
+# Providers known to publish high-quality GGUF quantizations
+GGUF_PROVIDERS = ["unsloth", "bartowski"]
+
+GGUF_CACHE_FILE = os.path.join(os.path.dirname(__file__), "..", "data", "gguf_sources_cache.json")
+GGUF_CACHE_MAX_AGE_DAYS = 7  # Re-check repos older than this
+
+
+def _load_gguf_cache() -> dict:
+    """Load the GGUF source cache from disk.
+
+    Returns dict mapping model repo_id -> {"sources": [...], "checked": ISO timestamp}
+    """
+    try:
+        with open(GGUF_CACHE_FILE) as f:
+            return json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError):
+        return {}
+
+
+def _save_gguf_cache(cache: dict):
+    """Save the GGUF source cache to disk."""
+    os.makedirs(os.path.dirname(GGUF_CACHE_FILE), exist_ok=True)
+    with open(GGUF_CACHE_FILE, "w") as f:
+        json.dump(cache, f, indent=2)
+
+
+def _cache_entry_fresh(entry: dict) -> bool:
+    """Check if a cache entry is still valid."""
+    try:
+        from datetime import datetime, timedelta, timezone
+        checked = datetime.fromisoformat(entry["checked"])
+        return (datetime.now(timezone.utc) - checked) < timedelta(days=GGUF_CACHE_MAX_AGE_DAYS)
+    except (KeyError, ValueError):
+        return False
+
+
+def _model_gguf_repo_candidates(repo_id: str) -> list[tuple[str, str]]:
+    """Generate candidate GGUF repo names for a model.
+
+    Returns list of (provider, candidate_repo_id) tuples.
+    e.g. for "meta-llama/Llama-3.1-8B-Instruct" →
+         [("unsloth", "unsloth/Llama-3.1-8B-Instruct-GGUF"),
+          ("bartowski", "bartowski/Llama-3.1-8B-Instruct-GGUF")]
+    """
+    model_name = repo_id.split("/")[-1]
+    candidates = []
+    for provider in GGUF_PROVIDERS:
+        candidates.append((provider, f"{provider}/{model_name}-GGUF"))
+    return candidates
+
+
+def check_gguf_repo_exists(repo_id: str) -> bool:
+    """Check if a HuggingFace repo exists and has GGUF files."""
+    url = f"{HF_API}/{repo_id}"
+    req = urllib.request.Request(url, headers=_auth_headers())
+    try:
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            info = json.loads(resp.read().decode())
+            tags = info.get("tags", [])
+            return "gguf" in tags
+    except Exception:
+        return False
+
+
+def enrich_gguf_sources(models: list[dict]) -> int:
+    """Add gguf_sources to models by checking GGUF provider repos.
+
+    Uses a persistent cache to avoid re-checking repos on every scrape.
+    Returns the number of models enriched.
+    """
+    cache = _load_gguf_cache()
+    enriched = 0
+    cache_hits = 0
+    total = len(models)
+    from datetime import datetime, timezone
+
+    for i, model in enumerate(models, 1):
+        repo_id = model["name"]
+
+        # Check cache first
+        if repo_id in cache and _cache_entry_fresh(cache[repo_id]):
+            sources = cache[repo_id]["sources"]
+            cache_hits += 1
+        else:
+            # Query HuggingFace
+            candidates = _model_gguf_repo_candidates(repo_id)
+            sources = []
+            for provider, candidate_repo in candidates:
+                print(f"  [{i}/{total}] Checking {candidate_repo}...", end="")
+                if check_gguf_repo_exists(candidate_repo):
+                    sources.append({"repo": candidate_repo, "provider": provider})
+                    print(" ✓")
+                else:
+                    print(" ✗")
+                time.sleep(0.15)  # Be polite to the API
+
+            # Update cache
+            cache[repo_id] = {
+                "sources": sources,
+                "checked": datetime.now(timezone.utc).isoformat(),
+            }
+
+        if sources:
+            model["gguf_sources"] = sources
+            enriched += 1
+
+    _save_gguf_cache(cache)
+    print(f"  Cache: {cache_hits} hits, {total - cache_hits} API checks")
+    return enriched
+
+
+# ---------------------------------------------------------------------------
 # Auto-discovery from HuggingFace trending / most-downloaded
 # ---------------------------------------------------------------------------
 
@@ -561,6 +676,15 @@ def main():
     parser.add_argument(
         "--min-downloads", type=int, default=10000,
         help="Minimum download count for discovered models (default: 10000)."
+    )
+    parser.add_argument(
+        "--gguf-sources", action="store_true", default=True,
+        help="Enrich models with known GGUF download sources from "
+             "providers like unsloth and bartowski on HuggingFace (default: enabled)."
+    )
+    parser.add_argument(
+        "--no-gguf-sources", action="store_false", dest="gguf_sources",
+        help="Skip GGUF download source enrichment (faster scrape)."
     )
     parser.add_argument(
         "--token", type=str, default=None,
@@ -1068,6 +1192,13 @@ def main():
     # Sort by parameter count
     results.sort(key=lambda m: m["parameters_raw"])
 
+    # Enrich with GGUF download sources if requested
+    gguf_enriched = 0
+    if args.gguf_sources:
+        print(f"\nEnriching {len(results)} models with GGUF download sources...")
+        gguf_enriched = enrich_gguf_sources(results)
+        print(f"  Found GGUF sources for {gguf_enriched} models")
+
     # Write to both locations: repo root (for reference) and llmfit-core (compiled into binary)
     output_paths = ["data/hf_models.json", "llmfit-core/data/hf_models.json"]
     for output_path in output_paths:
@@ -1077,7 +1208,7 @@ def main():
 
     print(f"\n✅ Wrote {len(results)} models to {', '.join(output_paths)}")
     print(f"   Curated: {len(TARGET_MODELS)}, Fallbacks: {fallback_count}, "
-          f"Discovered: {discovered_count}")
+          f"Discovered: {discovered_count}, GGUF-sourced: {gguf_enriched}")
 
     # Print summary table
     print(f"\n{'Model':<50} {'Params':>8} {'Min RAM':>8} {'Rec RAM':>8} {'VRAM':>6}")

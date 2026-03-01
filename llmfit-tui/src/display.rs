@@ -183,6 +183,22 @@ pub fn display_model_detail(fit: &ModelFit) {
     );
     println!();
 
+    if !fit.model.gguf_sources.is_empty() {
+        println!("{}", "GGUF Downloads:".bold().underline());
+        for src in &fit.model.gguf_sources {
+            println!("  {} → https://huggingface.co/{}", src.provider, src.repo);
+        }
+        println!(
+            "  {}",
+            format!(
+                "Tip: llmfit download {} --quant {}",
+                fit.model.gguf_sources[0].repo, fit.best_quant
+            )
+            .dimmed()
+        );
+        println!();
+    }
+
     if !fit.notes.is_empty() {
         println!("{}", "Notes:".bold().underline());
         for note in &fit.notes {
@@ -316,6 +332,7 @@ fn fit_to_json(fit: &ModelFit) -> serde_json::Value {
         "memory_available_gb": round2(fit.memory_available_gb),
         "utilization_pct": round1(fit.utilization_pct),
         "notes": fit.notes,
+        "gguf_sources": fit.model.gguf_sources,
     })
 }
 
