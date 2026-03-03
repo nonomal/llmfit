@@ -27,7 +27,7 @@ jobs:
         uses: docker/setup-qemu-action@v3
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@5f0a5eb7e47090af52db6c4e7f4c30fb76fc17ee # v3.9.0
+        uses: docker/setup-buildx-action@v3
 
       - name: Log in to GitHub Container Registry
         uses: docker/login-action@830126ccf9677aa6e98b8f5a8b7ea177ab1f8e63 # v4.0.0
