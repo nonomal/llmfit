@@ -49,6 +49,15 @@ Downloads the latest release binary from GitHub and installs it to `/usr/local/b
 curl -fsSL https://llmfit.axjns.dev/install.sh | sh -s -- --local
 ```
 
+### Docker / Podman
+```sh
+docker run ghcr.io/alexsjones/llmfit
+```
+This prints JSON from `llmfit recommend` command. The JSON could be further queried with `jq`.
+```
+podman run ghcr.io/alexsjones/llmfit recommend --use-case coding | jq '.models[].name'
+```
+
 ### From source
 ```sh
 git clone https://github.com/AlexsJones/llmfit.git
