@@ -955,6 +955,7 @@ impl App {
             return;
         }
         let model_name = fit.model.name.clone();
+        let has_catalog_gguf = !fit.model.gguf_sources.is_empty();
 
         // Choose provider based on runtime
         let use_mlx = fit.runtime == llmfit_core::fit::InferenceRuntime::Mlx && self.mlx_available;
@@ -964,7 +965,7 @@ impl App {
             return;
         }
 
-        let download_options = self.available_download_providers(&model_name);
+        let download_options = self.available_download_providers(&model_name, has_catalog_gguf);
         if !download_options.is_empty() {
             self.open_download_provider_popup(model_name, download_options);
         } else {
@@ -1029,7 +1030,15 @@ impl App {
 
     /// Start downloading a GGUF model via the llama.cpp provider.
     fn start_llamacpp_download_for_model(&mut self, model_name: String) {
-        let Some(repo) = providers::first_existing_gguf_repo(&model_name) else {
+        // Check catalog gguf_sources first (instant), then fall back to HTTP probe
+        let catalog_repo = self
+            .all_fits
+            .iter()
+            .find(|f| f.model.name == model_name)
+            .and_then(|f| f.model.gguf_sources.first())
+            .map(|s| s.repo.clone());
+        let Some(repo) = catalog_repo.or_else(|| providers::first_existing_gguf_repo(&model_name))
+        else {
             self.pull_status = Some("No GGUF repo found in remote registry".to_string());
             return;
         };
@@ -1101,14 +1110,22 @@ impl App {
         }
     }
 
-    fn available_download_providers(&self, model_name: &str) -> Vec<DownloadProvider> {
+    fn available_download_providers(
+        &self,
+        model_name: &str,
+        has_catalog_gguf: bool,
+    ) -> Vec<DownloadProvider> {
         let mut providers_for_model = Vec::new();
         if providers::has_ollama_mapping(model_name)
             && (self.ollama_available || self.ollama_binary_available)
         {
             providers_for_model.push(DownloadProvider::Ollama);
         }
-        if self.llamacpp_available && providers::first_existing_gguf_repo(model_name).is_some() {
+        // Check catalog gguf_sources first (no HTTP probe needed), then
+        // fall back to the heuristic repo lookup
+        if self.llamacpp_available
+            && (has_catalog_gguf || providers::first_existing_gguf_repo(model_name).is_some())
+        {
             providers_for_model.push(DownloadProvider::LlamaCpp);
         }
         providers_for_model
@@ -1200,12 +1217,13 @@ impl App {
         for idx in start..end {
             if let Some(&fit_idx) = self.filtered_fits.get(idx) {
                 let model_name = self.all_fits[fit_idx].model.name.clone();
-                self.enqueue_capability_probe(model_name);
+                let has_catalog_gguf = !self.all_fits[fit_idx].model.gguf_sources.is_empty();
+                self.enqueue_capability_probe(model_name, has_catalog_gguf);
             }
         }
     }
 
-    fn enqueue_capability_probe(&mut self, model_name: String) {
+    fn enqueue_capability_probe(&mut self, model_name: String, has_catalog_gguf: bool) {
         if self.download_capabilities.contains_key(&model_name)
             || self.download_capability_inflight.contains(&model_name)
             || self.download_capability_inflight.len() >= 12
@@ -1219,10 +1237,13 @@ impl App {
         let llamacpp_available = self.llamacpp_available;
         std::thread::spawn(move || {
             let has_ollama = ollama_runtime_available && providers::has_ollama_mapping(&model_name);
-            let mut has_llamacpp = false;
-            if llamacpp_available {
-                has_llamacpp = providers::first_existing_gguf_repo(&model_name).is_some();
-            }
+            let has_llamacpp = if llamacpp_available {
+                // Use catalog data when available to skip slow HTTP probes
+                has_catalog_gguf
+                    || providers::first_existing_gguf_repo(&model_name).is_some()
+            } else {
+                false
+            };
 
             let capability = match (has_ollama, has_llamacpp) {
                 (true, true) => DownloadCapability::Both,

@@ -1876,4 +1876,79 @@ mod tests {
         let files = parse_repo_gguf_entries(entries);
         assert_eq!(files, vec![("good.gguf".to_string(), 123u64)]);
     }
+
+    // ────────────────────────────────────────────────────────────────────
+    // GGUF candidate generation tests
+    // ────────────────────────────────────────────────────────────────────
+
+    #[test]
+    fn test_hf_name_to_gguf_candidates_generates_common_patterns() {
+        // Use a model without a hardcoded mapping to test heuristic generation
+        let candidates = hf_name_to_gguf_candidates("SomeOrg/Cool-Model-7B");
+        assert!(
+            candidates.iter().any(|c| c == "bartowski/Cool-Model-7B-GGUF"),
+            "Should generate bartowski candidate, got: {:?}",
+            candidates
+        );
+        assert!(
+            candidates.iter().any(|c| c == "ggml-org/Cool-Model-7B-GGUF"),
+            "Should generate ggml-org candidate, got: {:?}",
+            candidates
+        );
+        assert!(
+            candidates.iter().any(|c| c == "TheBloke/Cool-Model-7B-GGUF"),
+            "Should generate TheBloke candidate, got: {:?}",
+            candidates
+        );
+    }
+
+    #[test]
+    fn test_hf_name_to_gguf_candidates_strips_owner() {
+        // Should use the model name part, not the full "owner/name"
+        let candidates = hf_name_to_gguf_candidates("Qwen/Qwen2.5-7B-Instruct");
+        for c in &candidates {
+            assert!(
+                !c.contains("Qwen/Qwen"),
+                "Candidate should not contain original owner prefix: {}",
+                c
+            );
+        }
+    }
+
+    #[test]
+    fn test_lookup_gguf_repo_known_mappings() {
+        // Models with hardcoded mappings should be found
+        assert!(lookup_gguf_repo("meta-llama/Llama-3.1-8B-Instruct").is_some());
+        assert!(lookup_gguf_repo("deepseek-r1").is_some());
+    }
+
+    #[test]
+    fn test_lookup_gguf_repo_unknown_returns_none() {
+        assert!(lookup_gguf_repo("totally-unknown/model-xyz").is_none());
+    }
+
+    #[test]
+    fn test_has_gguf_mapping_matches_known_models() {
+        assert!(has_gguf_mapping("meta-llama/Llama-3.1-8B-Instruct"));
+        assert!(!has_gguf_mapping("some-random/UnknownModel"));
+    }
+
+    #[test]
+    fn test_gguf_candidates_fallback_covers_major_providers() {
+        // For a model without a hardcoded mapping, candidates should cover
+        // the major GGUF providers
+        let candidates = hf_name_to_gguf_candidates("SomeOrg/NewModel-7B");
+        assert!(candidates.iter().any(|c| c.starts_with("bartowski/")));
+        assert!(candidates.iter().any(|c| c.starts_with("ggml-org/")));
+        assert!(candidates.iter().any(|c| c.starts_with("TheBloke/")));
+        assert!(candidates.iter().all(|c| c.ends_with("-GGUF")));
+    }
+
+    #[test]
+    fn test_gguf_candidates_known_mapping_returns_single() {
+        // Models with a hardcoded mapping should return just that repo
+        let candidates = hf_name_to_gguf_candidates("meta-llama/Llama-3.1-8B-Instruct");
+        assert_eq!(candidates.len(), 1);
+        assert!(candidates[0].contains("GGUF"));
+    }
 }

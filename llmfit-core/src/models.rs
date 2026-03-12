@@ -1113,4 +1113,106 @@ mod tests {
         assert!(!ModelFormat::Mlx.is_prequantized());
         assert!(!ModelFormat::Safetensors.is_prequantized());
     }
+
+    // ────────────────────────────────────────────────────────────────────
+    // GGUF source catalog tests
+    // ────────────────────────────────────────────────────────────────────
+
+    #[test]
+    fn test_gguf_source_deserialization() {
+        let json = r#"{"repo": "unsloth/Llama-3.1-8B-Instruct-GGUF", "provider": "unsloth"}"#;
+        let source: GgufSource = serde_json::from_str(json).unwrap();
+        assert_eq!(source.repo, "unsloth/Llama-3.1-8B-Instruct-GGUF");
+        assert_eq!(source.provider, "unsloth");
+    }
+
+    #[test]
+    fn test_gguf_sources_default_to_empty() {
+        let json = r#"{
+            "name": "test/model",
+            "provider": "Test",
+            "parameter_count": "7B",
+            "parameters_raw": 7000000000,
+            "min_ram_gb": 4.0,
+            "recommended_ram_gb": 8.0,
+            "quantization": "Q4_K_M",
+            "context_length": 4096,
+            "use_case": "General"
+        }"#;
+        let entry: HfModelEntry = serde_json::from_str(json).unwrap();
+        assert!(entry.gguf_sources.is_empty());
+    }
+
+    #[test]
+    fn test_catalog_popular_models_have_gguf_sources() {
+        let db = ModelDatabase::new();
+        // These popular models should have gguf_sources populated in the catalog
+        let expected_with_gguf = [
+            "meta-llama/Llama-3.3-70B-Instruct",
+            "Qwen/Qwen2.5-7B-Instruct",
+            "Qwen/Qwen2.5-Coder-7B-Instruct",
+            "meta-llama/Meta-Llama-3-8B-Instruct",
+            "mistralai/Mistral-7B-Instruct-v0.3",
+        ];
+        for name in &expected_with_gguf {
+            let model = db.get_all_models().iter().find(|m| m.name == *name);
+            assert!(
+                model.is_some(),
+                "Model {} should exist in catalog",
+                name
+            );
+            let model = model.unwrap();
+            assert!(
+                !model.gguf_sources.is_empty(),
+                "Model {} should have gguf_sources but has none",
+                name
+            );
+        }
+    }
+
+    #[test]
+    fn test_catalog_gguf_sources_have_valid_repos() {
+        let db = ModelDatabase::new();
+        for model in db.get_all_models() {
+            for source in &model.gguf_sources {
+                assert!(
+                    source.repo.contains('/'),
+                    "GGUF source repo '{}' for model '{}' should be owner/repo format",
+                    source.repo,
+                    model.name
+                );
+                assert!(
+                    !source.provider.is_empty(),
+                    "GGUF source provider for model '{}' should not be empty",
+                    model.name
+                );
+                assert!(
+                    source.repo.to_uppercase().contains("GGUF"),
+                    "GGUF source repo '{}' for model '{}' should contain 'GGUF'",
+                    source.repo,
+                    model.name
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_catalog_has_significant_gguf_coverage() {
+        let db = ModelDatabase::new();
+        let total = db.get_all_models().len();
+        let with_gguf = db
+            .get_all_models()
+            .iter()
+            .filter(|m| !m.gguf_sources.is_empty())
+            .count();
+        // We should have at least 25% coverage after enrichment
+        let coverage_pct = (with_gguf as f64 / total as f64) * 100.0;
+        assert!(
+            coverage_pct >= 25.0,
+            "GGUF source coverage is only {:.1}% ({}/{}), expected at least 25%",
+            coverage_pct,
+            with_gguf,
+            total
+        );
+    }
 }

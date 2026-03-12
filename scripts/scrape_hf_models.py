@@ -680,7 +680,7 @@ def scrape_model(repo_id: str) -> dict | None:
 # ---------------------------------------------------------------------------
 
 # Providers known to publish high-quality GGUF quantizations
-GGUF_PROVIDERS = ["unsloth", "bartowski"]
+GGUF_PROVIDERS = ["unsloth", "bartowski", "ggml-org", "TheBloke", "mradermacher"]
 
 GGUF_CACHE_FILE = os.path.join(os.path.dirname(__file__), "..", "data", "gguf_sources_cache.json")
 GGUF_CACHE_MAX_AGE_DAYS = 7  # Re-check repos older than this
