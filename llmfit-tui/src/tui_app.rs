@@ -167,6 +167,8 @@ pub struct App {
 
     // Detail view
     pub show_detail: bool,
+    pub show_compare: bool,
+    pub compare_mark_model: Option<String>,
     pub show_plan: bool,
     plan_model_idx: Option<usize>,
     pub plan_field: PlanField,
@@ -189,12 +191,14 @@ pub struct App {
     pub ollama_available: bool,
     pub ollama_binary_available: bool,
     pub ollama_installed: HashSet<String>,
+    pub ollama_installed_count: usize,
     ollama: OllamaProvider,
     pub mlx_available: bool,
     pub mlx_installed: HashSet<String>,
     mlx: MlxProvider,
     pub llamacpp_available: bool,
     pub llamacpp_installed: HashSet<String>,
+    pub llamacpp_installed_count: usize,
     llamacpp: LlamaCppProvider,
 
     // Download state
@@ -227,7 +231,8 @@ impl App {
 
         // Detect Ollama
         let ollama = OllamaProvider::new();
-        let (ollama_available, ollama_installed) = ollama.detect_with_installed();
+        let (ollama_available, ollama_installed, ollama_installed_count) =
+            ollama.detect_with_installed();
         let ollama_binary_available = command_exists("ollama");
 
         // Detect MLX
@@ -237,7 +242,7 @@ impl App {
         // Detect llama.cpp
         let llamacpp = LlamaCppProvider::new();
         let llamacpp_available = llamacpp.is_available();
-        let llamacpp_installed = llamacpp.installed_models();
+        let (llamacpp_installed, llamacpp_installed_count) = llamacpp.installed_models_counted();
 
         // Track how many we're skipping so the UI can surface it.
         let backend_hidden_count = db
@@ -313,6 +318,8 @@ impl App {
             sort_column: SortColumn::Score,
             selected_row: 0,
             show_detail: false,
+            show_compare: false,
+            compare_mark_model: None,
             show_plan: false,
             plan_model_idx: None,
             plan_field: PlanField::Context,
@@ -331,12 +338,14 @@ impl App {
             ollama_available,
             ollama_binary_available,
             ollama_installed,
+            ollama_installed_count,
             ollama,
             mlx_available,
             mlx_installed,
             mlx,
             llamacpp_available,
             llamacpp_installed,
+            llamacpp_installed_count,
             llamacpp,
             pull_active: None,
             pull_status: None,
@@ -578,7 +587,52 @@ impl App {
 
     pub fn toggle_detail(&mut self) {
         self.show_plan = false;
+        self.show_compare = false;
         self.show_detail = !self.show_detail;
+    }
+
+    pub fn mark_selected_for_compare(&mut self) {
+        let Some(model_name) = self.selected_fit().map(|fit| fit.model.name.clone()) else {
+            self.pull_status = Some("No selected model to mark".to_string());
+            return;
+        };
+        self.compare_mark_model = Some(model_name.clone());
+        self.pull_status = Some(format!("Marked '{}' for compare", model_name));
+    }
+
+    pub fn clear_compare_mark(&mut self) {
+        self.compare_mark_model = None;
+        self.show_compare = false;
+        self.pull_status = Some("Cleared compare mark".to_string());
+    }
+
+    pub fn selected_compare_pair(&self) -> Option<(&ModelFit, &ModelFit)> {
+        let selected = self.selected_fit()?;
+        let mark_name = self.compare_mark_model.as_deref()?;
+        let marked = self.all_fits.iter().find(|f| f.model.name == mark_name)?;
+        if marked.model.name == selected.model.name {
+            return None;
+        }
+        Some((marked, selected))
+    }
+
+    pub fn toggle_compare_view(&mut self) {
+        if self.show_compare {
+            self.show_compare = false;
+            return;
+        }
+        if self.compare_mark_model.is_none() {
+            self.pull_status = Some("No marked model. Press m to mark one first".to_string());
+            return;
+        }
+        if self.selected_compare_pair().is_none() {
+            self.pull_status =
+                Some("Select a different model than the marked one to compare".to_string());
+            return;
+        }
+        self.show_detail = false;
+        self.show_plan = false;
+        self.show_compare = true;
     }
 
     pub fn open_plan_mode(&mut self) {
@@ -588,6 +642,7 @@ impl App {
         let fit = &self.all_fits[fit_idx];
 
         self.show_detail = false;
+        self.show_compare = false;
         self.show_plan = true;
         self.input_mode = InputMode::Plan;
         self.plan_model_idx = Some(fit_idx);
@@ -913,7 +968,8 @@ impl App {
         if !download_options.is_empty() {
             self.open_download_provider_popup(model_name, download_options);
         } else {
-            self.pull_status = Some("No compatible provider available for this model".to_string());
+            self.pull_status =
+                Some("No compatible runtime available — install Ollama or llama.cpp".to_string());
         }
     }
 
@@ -1056,7 +1112,7 @@ impl App {
         self.download_provider_options = options;
         self.download_provider_cursor = 0;
         self.input_mode = InputMode::DownloadProviderPopup;
-        self.pull_status = Some("Choose download provider and press Enter".to_string());
+        self.pull_status = Some("Choose download runtime and press Enter".to_string());
     }
 
     pub fn close_download_provider_popup(&mut self) {
@@ -1102,9 +1158,13 @@ impl App {
 
     /// Re-query all providers for installed models and update all_fits.
     pub fn refresh_installed(&mut self) {
-        self.ollama_installed = self.ollama.installed_models();
+        let (ollama_set, ollama_count) = self.ollama.installed_models_counted();
+        self.ollama_installed = ollama_set;
+        self.ollama_installed_count = ollama_count;
         self.mlx_installed = self.mlx.installed_models();
-        self.llamacpp_installed = self.llamacpp.installed_models();
+        let (llamacpp_set, llamacpp_count) = self.llamacpp.installed_models_counted();
+        self.llamacpp_installed = llamacpp_set;
+        self.llamacpp_installed_count = llamacpp_count;
         for fit in &mut self.all_fits {
             fit.installed = providers::is_model_installed(&fit.model.name, &self.ollama_installed)
                 || providers::is_model_installed_mlx(&fit.model.name, &self.mlx_installed)

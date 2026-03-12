@@ -52,20 +52,37 @@ pub struct OllamaProvider {
     base_url: String,
 }
 
+fn normalize_ollama_host(raw: &str) -> Option<String> {
+    let host = raw.trim();
+    if host.is_empty() {
+        return None;
+    }
+
+    if host.starts_with("http://") || host.starts_with("https://") {
+        return Some(host.to_string());
+    }
+
+    if host.contains("://") {
+        // Unsupported scheme (e.g. ftp://)
+        return None;
+    }
+
+    Some(format!("http://{host}"))
+}
+
 impl Default for OllamaProvider {
     fn default() -> Self {
         let base_url = std::env::var("OLLAMA_HOST")
             .ok()
-            .and_then(|url| {
-                if url.starts_with("http://") || url.starts_with("https://") {
-                    Some(url)
-                } else {
+            .and_then(|raw| {
+                let normalized = normalize_ollama_host(&raw);
+                if normalized.is_none() {
                     eprintln!(
-                        "Warning: OLLAMA_HOST must start with http:// or https://, ignoring: {}",
-                        url
+                        "Warning: could not parse OLLAMA_HOST='{}'. Expected host:port or http(s)://host:port",
+                        raw
                     );
-                    None
                 }
+                normalized
             })
             .unwrap_or_else(|| "http://localhost:11434".to_string());
         Self { base_url }
@@ -84,7 +101,7 @@ impl OllamaProvider {
 
     /// Single-pass startup probe to avoid duplicate `/api/tags` calls.
     /// Returns `(available, installed_models)`.
-    pub fn detect_with_installed(&self) -> (bool, HashSet<String>) {
+    pub fn detect_with_installed(&self) -> (bool, HashSet<String>, usize) {
         let mut set = HashSet::new();
         let Ok(resp) = ureq::get(&self.api_url("tags"))
             .config()
@@ -92,12 +109,13 @@ impl OllamaProvider {
             .build()
             .call()
         else {
-            return (false, set);
+            return (false, set, 0);
         };
 
         let Ok(tags): Result<TagsResponse, _> = resp.into_body().read_json() else {
-            return (true, set);
+            return (true, set, 0);
         };
+        let count = tags.models.len();
         for m in tags.models {
             let lower = m.name.to_lowercase();
             set.insert(lower.clone());
@@ -105,7 +123,34 @@ impl OllamaProvider {
                 set.insert(family.to_string());
             }
         }
-        (true, set)
+        (true, set, count)
+    }
+
+    /// Like `installed_models`, but also returns the true model count.
+    /// The HashSet may have fewer entries than 2*count due to family-name deduplication,
+    /// so `len() / 2` is unreliable for counting models.
+    pub fn installed_models_counted(&self) -> (HashSet<String>, usize) {
+        let mut set = HashSet::new();
+        let Ok(resp) = ureq::get(&self.api_url("tags"))
+            .config()
+            .timeout_global(Some(std::time::Duration::from_secs(5)))
+            .build()
+            .call()
+        else {
+            return (set, 0);
+        };
+        let Ok(tags): Result<TagsResponse, _> = resp.into_body().read_json() else {
+            return (set, 0);
+        };
+        let count = tags.models.len();
+        for m in tags.models {
+            let lower = m.name.to_lowercase();
+            set.insert(lower.clone());
+            if let Some(family) = lower.split(':').next() {
+                set.insert(family.to_string());
+            }
+        }
+        (set, count)
     }
 
     /// Best-effort check that a tag exists in Ollama's remote registry.
@@ -161,27 +206,7 @@ impl ModelProvider for OllamaProvider {
     }
 
     fn installed_models(&self) -> HashSet<String> {
-        let mut set = HashSet::new();
-        let Ok(resp) = ureq::get(&self.api_url("tags"))
-            .config()
-            .timeout_global(Some(std::time::Duration::from_secs(5)))
-            .build()
-            .call()
-        else {
-            return set;
-        };
-        let Ok(tags): Result<TagsResponse, _> = resp.into_body().read_json() else {
-            return set;
-        };
-        for m in tags.models {
-            let lower = m.name.to_lowercase();
-            // Store the full tag as-is (lowercased)
-            set.insert(lower.clone());
-            // Also store just the family (before the colon) so fuzzy matching works
-            if let Some(family) = lower.split(':').next() {
-                set.insert(family.to_string());
-            }
-        }
+        let (set, _) = self.installed_models_counted();
         set
     }
 
@@ -521,6 +546,25 @@ impl Default for LlamaCppProvider {
 impl LlamaCppProvider {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Like `installed_models`, but also returns the true GGUF file count.
+    /// The HashSet may have fewer entries than 2*count due to deduplication
+    /// when stripping quantization suffixes, so `len() / 2` is unreliable.
+    pub fn installed_models_counted(&self) -> (HashSet<String>, usize) {
+        let mut set = HashSet::new();
+        let mut count = 0usize;
+        for path in self.list_gguf_files() {
+            if let Some(stem) = path.file_stem().and_then(|s| s.to_str()) {
+                count += 1;
+                let lower = stem.to_lowercase();
+                set.insert(lower.clone());
+                if let Some(base) = strip_gguf_quant_suffix(&lower) {
+                    set.insert(base);
+                }
+            }
+        }
+        (set, count)
     }
 
     /// Return the directory where GGUF models are cached.
@@ -919,18 +963,7 @@ impl ModelProvider for LlamaCppProvider {
     }
 
     fn installed_models(&self) -> HashSet<String> {
-        let mut set = HashSet::new();
-        for path in self.list_gguf_files() {
-            if let Some(stem) = path.file_stem().and_then(|s| s.to_str()) {
-                let lower = stem.to_lowercase();
-                set.insert(lower.clone());
-                // Also insert a normalized form: strip quantization suffix
-                // e.g. "llama-3.1-8b-instruct-q4_k_m" → "llama-3.1-8b-instruct"
-                if let Some(base) = strip_gguf_quant_suffix(&lower) {
-                    set.insert(base);
-                }
-            }
-        }
+        let (set, _) = self.installed_models_counted();
         set
     }
 
@@ -1570,11 +1603,30 @@ pub fn has_ollama_mapping(hf_name: &str) -> bool {
     lookup_ollama_tag(hf_name).is_some()
 }
 
+fn ollama_installed_matches_candidate(installed_name: &str, candidate: &str) -> bool {
+    if installed_name == candidate {
+        return true;
+    }
+
+    // Allow variant tags reported by `ollama list`, e.g.
+    // candidate: "qwen2.5-coder:7b"
+    // installed: "qwen2.5-coder:7b-instruct-q4_K_M"
+    if candidate.contains(':') {
+        return installed_name.starts_with(&format!("{candidate}-"));
+    }
+
+    false
+}
+
 /// Check if any of the Ollama candidates for an HF model appear in the
 /// installed set.
 pub fn is_model_installed(hf_name: &str, installed: &HashSet<String>) -> bool {
     let candidates = hf_name_to_ollama_candidates(hf_name);
-    candidates.iter().any(|c| installed.contains(c))
+    candidates.iter().any(|candidate| {
+        installed
+            .iter()
+            .any(|installed_name| ollama_installed_matches_candidate(installed_name, candidate))
+    })
 }
 
 /// Given an HF model name, return the Ollama tag to use for pulling.
@@ -1705,6 +1757,19 @@ mod tests {
     }
 
     #[test]
+    fn test_installed_variant_suffix_matches_ollama_candidate() {
+        // Real-world `ollama list` may include variant suffixes that still map
+        // to the canonical pull tag in OLLAMA_MAPPINGS.
+        let mut installed = HashSet::new();
+        installed.insert("qwen2.5-coder:7b-instruct".to_string());
+
+        assert!(is_model_installed(
+            "Qwen/Qwen2.5-Coder-7B-Instruct",
+            &installed
+        ));
+    }
+
+    #[test]
     fn test_candidates_for_coder_model() {
         let candidates = hf_name_to_ollama_candidates("Qwen/Qwen2.5-Coder-14B-Instruct");
         assert!(candidates.contains(&"qwen2.5-coder:14b".to_string()));
@@ -1727,6 +1792,30 @@ mod tests {
         let candidates =
             hf_name_to_ollama_candidates("deepseek-ai/DeepSeek-Coder-V2-Lite-Instruct");
         assert!(candidates.contains(&"deepseek-coder-v2:16b".to_string()));
+    }
+
+    #[test]
+    fn test_normalize_ollama_host_with_scheme() {
+        assert_eq!(
+            normalize_ollama_host("https://ollama.example.com:11434"),
+            Some("https://ollama.example.com:11434".to_string())
+        );
+    }
+
+    #[test]
+    fn test_normalize_ollama_host_without_scheme() {
+        assert_eq!(
+            normalize_ollama_host("ollama.example.com:11434"),
+            Some("http://ollama.example.com:11434".to_string())
+        );
+    }
+
+    #[test]
+    fn test_normalize_ollama_host_rejects_unsupported_scheme() {
+        assert_eq!(
+            normalize_ollama_host("ftp://ollama.example.com:11434"),
+            None
+        );
     }
 
     #[test]

@@ -3,6 +3,11 @@
 <p align="center">
   <img src="assets/icon.svg" alt="llmfit icon" width="128" height="128">
 </p>
+<p align="center">
+  <a href="https://github.com/AlexsJones/llmfit/actions/workflows/ci.yml"><img src="https://github.com/AlexsJones/llmfit/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <a href="https://crates.io/crates/llmfit"><img src="https://img.shields.io/crates/v/llmfit.svg" alt="Crates.io"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License"></a>
+</p>
 
 **Hundreds of models & providers. One command to find what runs on your hardware.**
 
@@ -42,6 +47,15 @@ Downloads the latest release binary from GitHub and installs it to `/usr/local/b
 **Install to `~/.local/bin` without sudo:**
 ```sh
 curl -fsSL https://llmfit.axjns.dev/install.sh | sh -s -- --local
+```
+
+### Docker / Podman
+```sh
+docker run ghcr.io/alexsjones/llmfit
+```
+This prints JSON from `llmfit recommend` command. The JSON could be further queried with `jq`.
+```
+podman run ghcr.io/alexsjones/llmfit recommend --use-case coding | jq '.models[].name'
 ```
 
 ### From source
@@ -100,7 +114,7 @@ Use `p` on a selected row, then:
 | `Ctrl-U` | Clear current field |
 | `Esc` or `q` | Exit Plan mode |
 
-Plan mode shows estimate-based:
+Plan mode shows estimates for:
 - minimum and recommended VRAM/RAM/CPU cores
 - feasible run paths (GPU, CPU offload, CPU-only)
 - upgrade deltas to reach better fit targets

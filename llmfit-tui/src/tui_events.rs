@@ -35,6 +35,8 @@ fn handle_normal_mode(app: &mut App, key: KeyEvent) {
         KeyCode::Char('q') | KeyCode::Esc => {
             if app.show_detail {
                 app.show_detail = false;
+            } else if app.show_compare {
+                app.show_compare = false;
             } else {
                 app.should_quit = true;
             }
@@ -98,6 +100,11 @@ fn handle_normal_mode(app: &mut App, key: KeyEvent) {
 
         // Detail view
         KeyCode::Enter => app.toggle_detail(),
+
+        // Compare view
+        KeyCode::Char('m') => app.mark_selected_for_compare(),
+        KeyCode::Char('c') => app.toggle_compare_view(),
+        KeyCode::Char('x') => app.clear_compare_mark(),
 
         _ => {}
     }

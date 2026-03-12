@@ -211,6 +211,156 @@ pub fn display_model_detail(fit: &ModelFit) {
     }
 }
 
+pub fn display_model_diff(fits: &[ModelFit], sort_label: &str) {
+    if fits.len() < 2 {
+        println!("\n{}", "Need at least 2 models to compare.".yellow());
+        return;
+    }
+
+    println!("\n{}", "=== Model Diff ===".bold().cyan());
+    println!(
+        "Comparing {} model(s) (sorted by {})\n",
+        fits.len(),
+        sort_label
+    );
+
+    let metric_width = 20usize;
+    let col_width = 32usize;
+
+    let model_headers: Vec<String> = fits
+        .iter()
+        .enumerate()
+        .map(|(i, fit)| {
+            let label = format!("M{}: {}", i + 1, fit.model.name);
+            truncate_to_width(&label, col_width)
+        })
+        .collect();
+
+    print!("{:<metric_width$}", "Metric".bold());
+    for header in &model_headers {
+        print!("  {:<col_width$}", header.bold());
+    }
+    println!();
+
+    print!("{:-<metric_width$}", "");
+    for _ in &model_headers {
+        print!("  {:-<col_width$}", "");
+    }
+    println!();
+
+    let base = &fits[0];
+
+    print_metric_row(
+        "Score",
+        fits.iter()
+            .map(|f| format_with_delta(format!("{:.1}", f.score), f.score - base.score))
+            .collect(),
+        metric_width,
+        col_width,
+    );
+    print_metric_row(
+        "Baseline tok/s",
+        fits.iter()
+            .map(|f| {
+                format_with_delta(
+                    format!("{:.1}", f.estimated_tps),
+                    f.estimated_tps - base.estimated_tps,
+                )
+            })
+            .collect(),
+        metric_width,
+        col_width,
+    );
+    print_metric_row(
+        "Fit",
+        fits.iter()
+            .map(|f| format!("{} {}", f.fit_emoji(), f.fit_text()))
+            .collect(),
+        metric_width,
+        col_width,
+    );
+    print_metric_row(
+        "Run Mode",
+        fits.iter().map(|f| f.run_mode_text().to_string()).collect(),
+        metric_width,
+        col_width,
+    );
+    print_metric_row(
+        "Runtime",
+        fits.iter().map(|f| f.runtime_text().to_string()).collect(),
+        metric_width,
+        col_width,
+    );
+    print_metric_row(
+        "Memory %",
+        fits.iter()
+            .map(|f| {
+                format_with_delta(
+                    format!("{:.1}%", f.utilization_pct),
+                    f.utilization_pct - base.utilization_pct,
+                )
+            })
+            .collect(),
+        metric_width,
+        col_width,
+    );
+    print_metric_row(
+        "Params",
+        fits.iter()
+            .map(|f| f.model.parameter_count.clone())
+            .collect(),
+        metric_width,
+        col_width,
+    );
+    print_metric_row(
+        "Context",
+        fits.iter()
+            .map(|f| format!("{} tokens", f.model.context_length))
+            .collect(),
+        metric_width,
+        col_width,
+    );
+    print_metric_row(
+        "Best Quant",
+        fits.iter().map(|f| f.best_quant.clone()).collect(),
+        metric_width,
+        col_width,
+    );
+    print_metric_row(
+        "Provider",
+        fits.iter().map(|f| f.model.provider.clone()).collect(),
+        metric_width,
+        col_width,
+    );
+}
+
+fn print_metric_row(metric: &str, values: Vec<String>, metric_width: usize, col_width: usize) {
+    print!("{:<metric_width$}", metric);
+    for value in values {
+        print!("  {:<col_width$}", truncate_to_width(&value, col_width));
+    }
+    println!();
+}
+
+fn format_with_delta(value: String, delta: f64) -> String {
+    if delta.abs() < 0.05 {
+        return value;
+    }
+    format!("{} ({:+.1})", value, delta)
+}
+
+fn truncate_to_width(input: &str, width: usize) -> String {
+    if input.chars().count() <= width {
+        return input.to_string();
+    }
+    let mut out = input
+        .chars()
+        .take(width.saturating_sub(3))
+        .collect::<String>();
+    out.push_str("...");
+    out
+}
+
 pub fn display_search_results(models: &[&LlmModel], query: &str) {
     if models.is_empty() {
         println!(
@@ -277,6 +427,23 @@ pub fn display_json_fits(specs: &SystemSpecs, fits: &[ModelFit]) {
     );
 }
 
+/// Serialize diff output via serde derives (new diff-only path).
+pub fn display_json_diff_fits(specs: &SystemSpecs, fits: &[ModelFit]) {
+    #[derive(serde::Serialize)]
+    struct FitsOutput<'a> {
+        system: &'a SystemSpecs,
+        models: &'a [ModelFit],
+    }
+    let output = FitsOutput {
+        system: specs,
+        models: fits,
+    };
+    println!(
+        "{}",
+        serde_json::to_string_pretty(&output).expect("JSON serialization failed")
+    );
+}
+
 fn system_json(specs: &SystemSpecs) -> serde_json::Value {
     let gpus_json: Vec<serde_json::Value> = specs
         .gpus
@@ -337,6 +504,14 @@ fn fit_to_json(fit: &ModelFit) -> serde_json::Value {
         "notes": fit.notes,
         "gguf_sources": fit.model.gguf_sources,
     })
+}
+
+fn round1(v: f64) -> f64 {
+    (v * 10.0).round() / 10.0
+}
+
+fn round2(v: f64) -> f64 {
+    (v * 100.0).round() / 100.0
 }
 
 pub fn display_model_plan(plan: &PlanEstimate) {
@@ -414,12 +589,4 @@ pub fn display_json_plan(plan: &PlanEstimate) {
         "{}",
         serde_json::to_string_pretty(plan).expect("JSON serialization failed")
     );
-}
-
-fn round1(v: f64) -> f64 {
-    (v * 10.0).round() / 10.0
-}
-
-fn round2(v: f64) -> f64 {
-    (v * 100.0).round() / 100.0
 }

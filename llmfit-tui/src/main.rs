@@ -48,9 +48,41 @@ impl From<SortArg> for SortColumn {
     }
 }
 
+#[derive(clap::ValueEnum, Clone, Copy, Debug)]
+enum FitArg {
+    All,
+    Perfect,
+    Good,
+    Marginal,
+    Tight,
+    Runnable,
+}
+
 #[derive(Parser)]
 #[command(name = "llmfit")]
-#[command(about = "Right-size LLM models to your system's hardware", long_about = None)]
+#[command(about = "Right-size LLM models to your system's hardware")]
+#[command(long_about = "\
+Right-size LLM models to your system's hardware.
+
+llmfit detects your system's RAM, CPU, and GPU (NVIDIA, AMD, Apple Silicon),
+then scores every model in its database for fit, speed, and quality. It can
+recommend models, compare them side-by-side, plan hardware upgrades, download
+GGUF weights, and launch inference — all from a single binary.
+
+GLOBAL FLAGS:
+  --json           Output structured JSON on every subcommand (for tool/agent
+                   integration). Always exits 0 on success, 1 on error.
+  --memory <SIZE>  Override GPU VRAM (e.g. \"32G\", \"32000M\", \"1.5T\").
+  --max-context N  Cap context length for memory estimation (tokens).
+                   Falls back to OLLAMA_CONTEXT_LENGTH env var if unset.
+
+EXIT CODES:
+  0  Success
+  1  Any error (hardware detection failure, model not found, network error, etc.)
+
+ENVIRONMENT VARIABLES:
+  OLLAMA_CONTEXT_LENGTH  Default context-length cap when --max-context is not set.")]
+#[command(after_long_help = "For a compact summary, use -h instead of --help.")]
 #[command(version)]
 struct Cli {
     #[command(subcommand)]
@@ -90,12 +122,80 @@ struct Cli {
 #[derive(Subcommand)]
 enum Commands {
     /// Show system hardware specifications
+    #[command(long_about = "\
+Show system hardware specifications.
+
+Detects RAM, CPU, and GPU (NVIDIA via nvidia-smi, AMD via rocm-smi/sysfs,
+Apple Silicon via system_profiler). On unified-memory systems (Apple Silicon),
+VRAM is reported as system RAM.
+
+PRECONDITIONS:
+  None. GPU detection is best-effort and fails silently if tools are missing.
+
+SIDE EFFECTS:
+  None — read-only.
+
+EXIT CODES:
+  0  Success
+
+AGENT USAGE:
+  llmfit system --json
+
+  JSON output fields: { system: { cpu, ram_gb, gpu_name, gpu_vram_gb,
+  gpu_backend, unified_memory, os } }")]
     System,
 
     /// List all available LLM models
+    #[command(long_about = "\
+List all available LLM models.
+
+Prints every model in the embedded database with name, provider, parameter
+count, quantization, and context length. No hardware analysis is performed.
+
+PRECONDITIONS:
+  None.
+
+SIDE EFFECTS:
+  None — read-only.
+
+EXIT CODES:
+  0  Success
+
+AGENT USAGE:
+  llmfit list --json
+
+  JSON output: array of model objects with fields: name, provider,
+  parameter_count, min_ram_gb, recommended_ram_gb, min_vram_gb,
+  quantization, context_length, use_case, capabilities.")]
     List,
 
     /// Find models that fit your system (classic table output)
+    #[command(long_about = "\
+Find models that fit your system (classic table output).
+
+Detects hardware, scores every model for fit/speed/quality, and prints a
+ranked table. Models incompatible with the detected backend are hidden.
+
+PRECONDITIONS:
+  Requires hardware detection (GPU via nvidia-smi/rocm-smi/system_profiler).
+  Use --memory to override GPU VRAM if autodetection fails.
+
+SIDE EFFECTS:
+  None — read-only.
+
+EXIT CODES:
+  0  Success
+  1  Hardware detection or internal error
+
+AGENT USAGE:
+  llmfit fit --json
+  llmfit fit --json --perfect -n 5
+  llmfit fit --json --sort tps
+
+  JSON output fields: { system: {...}, models: [{ name, provider,
+  parameter_count, fit_level, run_mode, score, score_components,
+  estimated_tps, memory_required_gb, memory_available_gb,
+  utilization_pct, best_quant, use_case, runtime }] }")]
     Fit {
         /// Show only models that perfectly match recommended specs
         #[arg(short, long)]
@@ -111,18 +211,129 @@ enum Commands {
     },
 
     /// Search for specific models
+    #[command(long_about = "\
+Search for specific models.
+
+Searches the embedded model database by name, provider, or parameter size.
+No hardware analysis is performed.
+
+PRECONDITIONS:
+  None.
+
+SIDE EFFECTS:
+  None — read-only.
+
+EXIT CODES:
+  0  Success (even if no matches found)
+
+AGENT USAGE:
+  No --json support for this command. Use 'llmfit list --json' and filter
+  client-side, or use 'llmfit info <model> --json' for a specific model.")]
     Search {
         /// Search query (model name, provider, or size)
         query: String,
     },
 
     /// Show detailed information about a specific model
+    #[command(long_about = "\
+Show detailed information about a specific model.
+
+Looks up a model by name (or partial name) and displays full specs plus a
+hardware fit analysis against the current system.
+
+PRECONDITIONS:
+  None. Hardware detection runs automatically for fit analysis.
+
+SIDE EFFECTS:
+  None — read-only.
+
+EXIT CODES:
+  0  Success
+  1  No model found, or ambiguous partial match
+
+AGENT USAGE:
+  llmfit info \"llama-3.1-8b\" --json
+
+  JSON output fields: { system: {...}, models: [{ <single model with full
+  fit analysis: name, fit_level, run_mode, score, score_components,
+  estimated_tps, memory_required_gb, utilization_pct, ... > }] }")]
     Info {
         /// Model name or partial name to look up
         model: String,
     },
 
+    /// Compare two models side-by-side, or auto-compare top N filtered models
+    #[command(long_about = "\
+Compare two models side-by-side, or auto-compare top N filtered models.
+
+When two model selectors are given, compares those two models. When none are
+given, picks the top N models (default 2) after applying fit-level and sort
+filters, and compares them.
+
+PRECONDITIONS:
+  Requires hardware detection for fit analysis. At least 2 models must pass
+  the filter for auto-compare mode.
+
+SIDE EFFECTS:
+  None — read-only.
+
+EXIT CODES:
+  0  Success
+  1  Model not found, ambiguous selector, fewer than 2 candidates, or
+     both selectors resolve to the same model
+
+AGENT USAGE:
+  llmfit diff --json
+  llmfit diff \"llama-8b\" \"qwen-7b\" --json
+  llmfit diff --json --fit good --sort tps -n 3
+
+  JSON output fields: { system: {...}, models: [{ name, fit_level,
+  run_mode, score, estimated_tps, memory_required_gb, ... }] }")]
+    Diff {
+        /// First model selector (name or unique partial name)
+        model_a: Option<String>,
+
+        /// Second model selector (name or unique partial name)
+        model_b: Option<String>,
+
+        /// Sort column before selecting candidates
+        #[arg(long, value_enum, default_value_t = SortArg::Score)]
+        sort: SortArg,
+
+        /// Fit-level filter before candidate selection
+        #[arg(long, value_enum, default_value_t = FitArg::Runnable)]
+        fit: FitArg,
+
+        /// Number of top models to include when model names are omitted
+        #[arg(short = 'n', long, default_value_t = 2)]
+        limit: usize,
+    },
+
     /// Plan hardware requirements for a specific model configuration
+    #[command(long_about = "\
+Plan hardware requirements for a specific model configuration.
+
+Estimates VRAM/RAM requirements, expected throughput, and recommended hardware
+for running a model at a given context length and quantization. Useful for
+capacity planning and hardware purchasing decisions.
+
+PRECONDITIONS:
+  Model must exist in the embedded database (use 'llmfit search' to verify).
+
+SIDE EFFECTS:
+  None — read-only.
+
+EXIT CODES:
+  0  Success
+  1  Model not found or invalid configuration
+
+AGENT USAGE:
+  llmfit plan \"llama-3.1-70b\" --context 8192 --json
+  llmfit plan \"qwen-72b\" --context 4096 --quant Q4_K_M --target-tps 15 --json
+
+  JSON output: PlanEstimate object with fields: model_name, context_length,
+  quantization, weight_gb, kv_cache_gb, total_vram_gb, fits_in_vram,
+  estimated_tps, recommended_gpu, notes.")]
     Plan {
         /// Model selector (name or unique partial name)
         model: String,
@@ -141,6 +352,33 @@ enum Commands {
     },
 
     /// Recommend top models for your hardware (JSON-friendly)
+    #[command(long_about = "\
+Recommend top models for your hardware (JSON-friendly).
+
+Analyzes all models against detected hardware and returns the top N ranked
+recommendations. Supports filtering by use case, fit level, inference runtime,
+and model capabilities. JSON output is enabled by default.
+
+PRECONDITIONS:
+  Requires hardware detection. Use --memory to override GPU VRAM if needed.
+
+SIDE EFFECTS:
+  None — read-only.
+
+EXIT CODES:
+  0  Success
+  1  Hardware detection or internal error
+
+AGENT USAGE:
+  llmfit recommend
+  llmfit recommend -n 3 --use-case coding --min-fit good
+  llmfit recommend --runtime mlx --capability vision
+
+  JSON output is the default. Fields: { system: {...}, models: [{ name,
+  provider, parameter_count, fit_level, run_mode, score, score_components
+  { quality, speed, fit, context }, estimated_tps, memory_required_gb,
+  memory_available_gb, utilization_pct, best_quant, use_case, runtime,
+  capabilities }] }")]
     Recommend {
         /// Limit number of recommendations
         #[arg(short = 'n', long, default_value = "5")]
@@ -168,6 +406,29 @@ enum Commands {
     },
 
     /// Download a GGUF model from HuggingFace for use with llama.cpp
+    #[command(long_about = "\
+Download a GGUF model from HuggingFace for use with llama.cpp.
+
+Accepts a HuggingFace repo ID, a search query, or a known model name.
+Automatically selects the best quantization that fits your hardware unless
+--quant is specified. Use --list to browse available files without downloading.
+
+PRECONDITIONS:
+  Network access to huggingface.co. Hardware detection runs for auto quant
+  selection (override with --budget or --quant).
+
+SIDE EFFECTS:
+  Downloads a GGUF file to the local model cache directory
+  (~/.cache/llmfit/models/ or platform equivalent).
+
+EXIT CODES:
+  0  Success
+  1  Model/repo not found, no GGUF files available, network error, or
+     download failure
+
+AGENT USAGE:
+  No --json support. Parse stdout for progress and completion messages.
+  Use --list to enumerate available quantizations before downloading.")]
     Download {
         /// Model to download. Can be:
         ///   - HuggingFace repo (e.g. "bartowski/Llama-3.1-8B-Instruct-GGUF")
@@ -190,6 +451,24 @@ enum Commands {
     },
 
     /// Search HuggingFace for GGUF models compatible with llama.cpp
+    #[command(long_about = "\
+Search HuggingFace for GGUF models compatible with llama.cpp.
+
+Queries the HuggingFace Hub API for repositories containing GGUF model files.
+Results include the repository ID and model type.
+
+PRECONDITIONS:
+  Network access to huggingface.co.
+
+SIDE EFFECTS:
+  None — read-only (network query only).
+
+EXIT CODES:
+  0  Success (even if no results found)
+
+AGENT USAGE:
+  No --json support. Parse the tabular stdout output, or use the llmfit
+  REST API ('llmfit serve') for programmatic access.")]
     HfSearch {
         /// Search query (model name, architecture, etc.)
         query: String,
@@ -200,6 +479,30 @@ enum Commands {
     },
 
     /// Run a downloaded GGUF model with llama-cli or llama-server
+    #[command(long_about = "\
+Run a downloaded GGUF model with llama-cli or llama-server.
+
+Launches an interactive chat session (default) or an OpenAI-compatible API
+server (--server). The model can be specified as a file path or a name to
+search in the local cache.
+
+PRECONDITIONS:
+  llama-cli (or llama-server with --server) must be installed and in PATH.
+  A GGUF model file must exist locally (use 'llmfit download' first).
+
+SIDE EFFECTS:
+  Launches an external llama.cpp process. In server mode, binds to the
+  specified port.
+
+EXIT CODES:
+  0  Clean exit from llama.cpp
+  1  llama-cli/llama-server not found, model not found, or process error
+  *  Other codes are proxied from the llama.cpp process
+
+AGENT USAGE:
+  No --json support. For API server mode, use:
+    llmfit run <model> --server --port 8080
+  Then interact via the OpenAI-compatible API at http://localhost:8080.")]
     Run {
         /// Model file or name to run. If a name is given, searches the local cache.
         model: String,
@@ -222,6 +525,27 @@ enum Commands {
     },
 
     /// Start llmfit REST API server for cluster/node scheduling workflows
+    #[command(long_about = "\
+Start llmfit REST API server for cluster/node scheduling workflows.
+
+Exposes llmfit's hardware detection and model fitting as a REST API. Useful
+for multi-node clusters, CI pipelines, and orchestration systems that need
+to query hardware capabilities and model recommendations programmatically.
+
+PRECONDITIONS:
+  The specified host:port must be available for binding.
+
+SIDE EFFECTS:
+  Binds an HTTP server on the specified host and port (default 0.0.0.0:8787).
+  Runs until terminated.
+
+EXIT CODES:
+  0  Clean shutdown
+  1  Port binding failure or runtime error
+
+AGENT USAGE:
+  llmfit serve --port 8787
+  All endpoints return JSON. See API.md for the full endpoint reference.")]
     Serve {
         /// Host interface to bind
         #[arg(long, default_value = "0.0.0.0")]
@@ -321,6 +645,133 @@ fn run_fit(
             );
         }
         display::display_model_fits(&fits);
+    }
+}
+
+fn fit_matches_filter(fit: &ModelFit, filter: FitArg) -> bool {
+    match filter {
+        FitArg::All => true,
+        FitArg::Perfect => fit.fit_level == llmfit_core::fit::FitLevel::Perfect,
+        FitArg::Good => fit.fit_level == llmfit_core::fit::FitLevel::Good,
+        FitArg::Marginal => fit.fit_level == llmfit_core::fit::FitLevel::Marginal,
+        FitArg::Tight => fit.fit_level == llmfit_core::fit::FitLevel::TooTight,
+        FitArg::Runnable => fit.fit_level != llmfit_core::fit::FitLevel::TooTight,
+    }
+}
+
+fn find_fit_index_by_selector(fits: &[ModelFit], selector: &str) -> Result<usize, String> {
+    let needle = selector.trim().to_lowercase();
+    if needle.is_empty() {
+        return Err("Model selector cannot be empty".to_string());
+    }
+
+    if let Some((idx, _)) = fits
+        .iter()
+        .enumerate()
+        .find(|(_, f)| f.model.name.to_lowercase() == needle)
+    {
+        return Ok(idx);
+    }
+
+    let matches: Vec<(usize, &str)> = fits
+        .iter()
+        .enumerate()
+        .filter_map(|(i, f)| {
+            if f.model.name.to_lowercase().contains(&needle) {
+                Some((i, f.model.name.as_str()))
+            } else {
+                None
+            }
+        })
+        .collect();
+
+    match matches.as_slice() {
+        [] => Err(format!("No model found matching '{}'", selector)),
+        [(idx, _)] => Ok(*idx),
+        _ => {
+            let names = matches
+                .iter()
+                .take(8)
+                .map(|(_, name)| format!("  - {}", name))
+                .collect::<Vec<_>>()
+                .join("\n");
+            Err(format!(
+                "Multiple models match '{}'. Please be more specific:\n{}",
+                selector, names
+            ))
+        }
+    }
+}
+
+fn run_diff(
+    model_a: Option<String>,
+    model_b: Option<String>,
+    fit_filter: FitArg,
+    sort: SortColumn,
+    limit: usize,
+    json: bool,
+    memory_override: &Option<String>,
+    context_limit: Option<u32>,
+) {
+    if limit < 2 {
+        eprintln!("Error: --limit must be at least 2 for diff");
+        std::process::exit(1);
+    }
+
+    if (model_a.is_some() && model_b.is_none()) || (model_a.is_none() && model_b.is_some()) {
+        eprintln!("Error: provide both model selectors, or neither to auto-compare top N");
+        std::process::exit(1);
+    }
+
+    let specs = detect_specs(memory_override);
+    let db = ModelDatabase::new();
+
+    let mut fits: Vec<ModelFit> = db
+        .get_all_models()
+        .iter()
+        .filter(|m| backend_compatible(m, &specs))
+        .map(|m| ModelFit::analyze_with_context_limit(m, &specs, context_limit))
+        .collect();
+
+    fits.retain(|f| fit_matches_filter(f, fit_filter));
+    fits = llmfit_core::fit::rank_models_by_fit_opts_col(fits, false, sort);
+
+    let selected: Vec<ModelFit> =
+        if let (Some(a), Some(b)) = (model_a.as_deref(), model_b.as_deref()) {
+            let a_idx = match find_fit_index_by_selector(&fits, a) {
+                Ok(i) => i,
+                Err(e) => {
+                    eprintln!("Error: {}", e);
+                    std::process::exit(1);
+                }
+            };
+            let b_idx = match find_fit_index_by_selector(&fits, b) {
+                Ok(i) => i,
+                Err(e) => {
+                    eprintln!("Error: {}", e);
+                    std::process::exit(1);
+                }
+            };
+
+            if a_idx == b_idx {
+                eprintln!("Error: both selectors resolved to the same model");
+                std::process::exit(1);
+            }
+
+            vec![fits[a_idx].clone(), fits[b_idx].clone()]
+        } else {
+            if fits.len() < 2 {
+                eprintln!("Error: need at least 2 models after filtering to compare");
+                std::process::exit(1);
+            }
+            fits.into_iter().take(limit).collect()
+        };
+
+    if json {
+        display::display_json_diff_fits(&specs, &selected);
+    } else {
+        specs.display();
+        display::display_model_diff(&selected, sort.label());
     }
 }
 
@@ -453,6 +904,7 @@ fn run_recommend(
         "llamacpp" | "llama.cpp" | "llama_cpp" => {
             fits.retain(|f| f.runtime == llmfit_core::fit::InferenceRuntime::LlamaCpp)
         }
+        "vllm" => fits.retain(|f| f.runtime == llmfit_core::fit::InferenceRuntime::Vllm),
         _ => {} // "any" or unrecognized — keep all
     }
 
@@ -859,7 +1311,15 @@ fn main() {
 
             Commands::List => {
                 let db = ModelDatabase::new();
-                display::display_all_models(db.get_all_models());
+                if cli.json {
+                    println!(
+                        "{}",
+                        serde_json::to_string_pretty(db.get_all_models())
+                            .expect("JSON serialization failed")
+                    );
+                } else {
+                    display::display_all_models(db.get_all_models());
+                }
             }
 
             Commands::Fit {
@@ -907,6 +1367,25 @@ fn main() {
                 } else {
                     display::display_model_detail(&fit);
                 }
+            }
+
+            Commands::Diff {
+                model_a,
+                model_b,
+                sort,
+                fit,
+                limit,
+            } => {
+                run_diff(
+                    model_a,
+                    model_b,
+                    fit,
+                    sort.into(),
+                    limit,
+                    cli.json,
+                    &cli.memory,
+                    context_limit,
+                );
             }
 
             Commands::Plan {
@@ -993,5 +1472,84 @@ fn main() {
     if let Err(e) = run_tui(&cli.memory, context_limit) {
         eprintln!("Error running TUI: {}", e);
         std::process::exit(1);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use llmfit_core::fit::{FitLevel, InferenceRuntime, RunMode, ScoreComponents};
+    use llmfit_core::models::LlmModel;
+
+    fn mock_fit(name: &str, fit_level: FitLevel) -> ModelFit {
+        ModelFit {
+            model: LlmModel {
+                name: name.to_string(),
+                provider: "test".to_string(),
+                parameter_count: "7B".to_string(),
+                parameters_raw: None,
+                min_ram_gb: 4.0,
+                recommended_ram_gb: 8.0,
+                min_vram_gb: Some(4.0),
+                quantization: "Q4_K_M".to_string(),
+                context_length: 8192,
+                use_case: "general".to_string(),
+                is_moe: false,
+                num_experts: None,
+                active_experts: None,
+                active_parameters: None,
+                release_date: Some("2025-01-01".to_string()),
+                gguf_sources: vec![],
+                capabilities: vec![],
+                format: llmfit_core::models::ModelFormat::default(),
+            },
+            fit_level,
+            run_mode: RunMode::Gpu,
+            memory_required_gb: 4.0,
+            memory_available_gb: 8.0,
+            utilization_pct: 50.0,
+            notes: vec![],
+            moe_offloaded_gb: None,
+            score: 80.0,
+            score_components: ScoreComponents {
+                quality: 80.0,
+                speed: 80.0,
+                fit: 80.0,
+                context: 80.0,
+            },
+            estimated_tps: 30.0,
+            best_quant: "Q4_K_M".to_string(),
+            use_case: llmfit_core::models::UseCase::General,
+            runtime: InferenceRuntime::LlamaCpp,
+            installed: false,
+        }
+    }
+
+    #[test]
+    fn fit_filter_runnable_excludes_too_tight() {
+        let runnable = mock_fit("alpha/model", FitLevel::Good);
+        let tight = mock_fit("beta/model", FitLevel::TooTight);
+        assert!(fit_matches_filter(&runnable, FitArg::Runnable));
+        assert!(!fit_matches_filter(&tight, FitArg::Runnable));
+    }
+
+    #[test]
+    fn selector_prefers_exact_match() {
+        let fits = vec![
+            mock_fit("org/model-a", FitLevel::Perfect),
+            mock_fit("org/model-a-instruct", FitLevel::Perfect),
+        ];
+        let idx = find_fit_index_by_selector(&fits, "org/model-a").expect("should resolve");
+        assert_eq!(idx, 0);
+    }
+
+    #[test]
+    fn selector_errors_on_ambiguous_partial() {
+        let fits = vec![
+            mock_fit("org/model-a", FitLevel::Perfect),
+            mock_fit("org/model-a-instruct", FitLevel::Perfect),
+        ];
+        let err = find_fit_index_by_selector(&fits, "model-a").expect_err("should be ambiguous");
+        assert!(err.contains("Multiple models match"));
     }
 }

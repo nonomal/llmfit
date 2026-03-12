@@ -13,8 +13,7 @@ use crate::theme::ThemeColors;
 use crate::tui_app::{
     App, AvailabilityFilter, DownloadCapability, DownloadProvider, FitFilter, InputMode, PlanField,
 };
-use llmfit_core::fit::FitLevel;
-use llmfit_core::fit::SortColumn;
+use llmfit_core::fit::{FitLevel, ModelFit, SortColumn};
 use llmfit_core::hardware::is_running_in_wsl;
 use llmfit_core::providers;
 
@@ -42,6 +41,8 @@ pub fn draw(frame: &mut Frame, app: &mut App) {
 
     if app.show_plan {
         draw_plan(frame, app, outer[2], &tc);
+    } else if app.show_compare {
+        draw_compare(frame, app, outer[2], &tc);
     } else if app.show_detail {
         draw_detail(frame, app, outer[2], &tc);
     } else {
@@ -101,7 +102,7 @@ fn draw_system_bar(frame: &mut Frame, app: &App, area: Rect, tc: &ThemeColors) {
     };
 
     let ollama_info = if app.ollama_available {
-        format!("Ollama: ✓ ({} installed)", app.ollama_installed.len() / 2)
+        format!("Ollama: ✓ ({} installed)", app.ollama_installed_count)
     } else {
         "Ollama: ✗".to_string()
     };
@@ -127,10 +128,9 @@ fn draw_system_bar(frame: &mut Frame, app: &App, area: Rect, tc: &ThemeColors) {
     };
 
     let llamacpp_info = if app.llamacpp_available {
-        let n = app.llamacpp_installed.len() / 2; // stems + base names
-        format!("llama.cpp: ✓ ({} models)", n)
+        format!("llama.cpp: ✓ ({} models)", app.llamacpp_installed_count)
     } else if !app.llamacpp_installed.is_empty() {
-        format!("llama.cpp: ({} cached)", app.llamacpp_installed.len() / 2)
+        format!("llama.cpp: ({} cached)", app.llamacpp_installed_count)
     } else {
         "llama.cpp: ✗".to_string()
     };
@@ -554,8 +554,14 @@ fn draw_table(frame: &mut Frame, app: &mut App, area: Rect, tc: &ThemeColors) {
                 Style::default()
             };
 
+            let marker = if app.compare_mark_model.as_deref() == Some(fit.model.name.as_str()) {
+                format!("{}*", fit_indicator(fit.fit_level))
+            } else {
+                fit_indicator(fit.fit_level).to_string()
+            };
+
             Row::new(vec![
-                Cell::from(fit_indicator(fit.fit_level)).style(Style::default().fg(color)),
+                Cell::from(marker).style(Style::default().fg(color)),
                 Cell::from(installed_icon).style(Style::default().fg(installed_color)),
                 Cell::from(fit.model.name.clone()).style(Style::default().fg(tc.fg)),
                 Cell::from(fit.model.provider.clone()).style(Style::default().fg(tc.muted)),
@@ -592,7 +598,7 @@ fn draw_table(frame: &mut Frame, app: &mut App, area: Rect, tc: &ThemeColors) {
         Constraint::Length(8),  // params
         Constraint::Length(6),  // score
         Constraint::Length(6),  // tok/s
-        Constraint::Length(7),  // quant
+        Constraint::Length(10), // quant (AWQ-4bit, GPTQ-Int4, GPTQ-Int8)
         Constraint::Length(7),  // mode
         Constraint::Length(6),  // mem %
         Constraint::Length(5),  // ctx
@@ -642,6 +648,316 @@ fn draw_table(frame: &mut Frame, app: &mut App, area: Rect, tc: &ThemeColors) {
             &mut scrollbar_state,
         );
     }
+}
+
+fn draw_compare(frame: &mut Frame, app: &App, area: Rect, tc: &ThemeColors) {
+    let Some((left, right)) = app.selected_compare_pair() else {
+        let block = Block::default()
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(tc.border))
+            .title(" Compare ")
+            .title_style(Style::default().fg(tc.title).add_modifier(Modifier::BOLD));
+        let body = Paragraph::new(vec![
+            Line::from(""),
+            Line::from(Span::styled(
+                "  Compare requires two different models.",
+                Style::default().fg(tc.warning),
+            )),
+            Line::from(""),
+            Line::from(Span::styled(
+                "  1) Move to a model and press m (mark).",
+                Style::default().fg(tc.muted),
+            )),
+            Line::from(Span::styled(
+                "  2) Move to another model and press c (compare).",
+                Style::default().fg(tc.muted),
+            )),
+            Line::from(Span::styled(
+                "  3) Press c again to return.",
+                Style::default().fg(tc.muted),
+            )),
+        ])
+        .block(block);
+        frame.render_widget(body, area);
+        return;
+    };
+
+    let sections = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Length(3), Constraint::Min(10)])
+        .split(area);
+    let cols = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
+        .split(sections[1]);
+
+    let title = Paragraph::new(Line::from(vec![
+        Span::styled(" Compare ", Style::default().fg(tc.accent).bold()),
+        Span::styled(
+            format!("{}  vs  {}", left.model.name, right.model.name),
+            Style::default().fg(tc.fg),
+        ),
+    ]))
+    .block(
+        Block::default()
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(tc.border)),
+    );
+    frame.render_widget(title, sections[0]);
+
+    let score_delta = right.score - left.score;
+    let tps_delta = right.estimated_tps - left.estimated_tps;
+    let mem_delta = right.utilization_pct - left.utilization_pct;
+    let params_delta = right.model.params_b() - left.model.params_b();
+    let ctx_delta = right.model.context_length as i64 - left.model.context_length as i64;
+
+    let score_hint = if score_delta > 0.05 {
+        " ↑"
+    } else if score_delta < -0.05 {
+        " ↓"
+    } else {
+        " ="
+    };
+    let tps_hint = if tps_delta > 0.05 {
+        " ↑"
+    } else if tps_delta < -0.05 {
+        " ↓"
+    } else {
+        " ="
+    };
+    let mem_hint = if mem_delta > 0.05 {
+        " ↑"
+    } else if mem_delta < -0.05 {
+        " ↓"
+    } else {
+        " ="
+    };
+    let params_hint = if params_delta > 0.01 {
+        " ↑"
+    } else if params_delta < -0.01 {
+        " ↓"
+    } else {
+        " ="
+    };
+    let ctx_hint = if ctx_delta > 0 {
+        " ↑"
+    } else if ctx_delta < 0 {
+        " ↓"
+    } else {
+        " ="
+    };
+
+    let score_style = Style::default().fg(if score_delta >= 0.0 {
+        tc.good
+    } else {
+        tc.warning
+    });
+    let tps_style = Style::default().fg(if tps_delta >= 0.0 {
+        tc.good
+    } else {
+        tc.warning
+    });
+    let mem_style = Style::default().fg(if mem_delta <= 0.0 {
+        tc.good
+    } else {
+        tc.warning
+    });
+    let params_style = Style::default().fg(if params_delta >= 0.0 {
+        tc.good
+    } else {
+        tc.warning
+    });
+    let ctx_style = Style::default().fg(if ctx_delta >= 0 { tc.good } else { tc.warning });
+
+    let legend = Paragraph::new(Line::from(Span::styled(
+        "  Delta hints: ↑ value increased, ↓ value decreased (for Mem%, lower is better)",
+        Style::default().fg(tc.muted),
+    )));
+    frame.render_widget(legend, sections[0]);
+
+    let left_metrics = CompareMetrics {
+        score: format!("{:.1}", left.score),
+        score_style: Style::default().fg(tc.score_high),
+        tps: format!("{:.1}", left.estimated_tps),
+        tps_style: Style::default().fg(tc.fg),
+        mem: format!("{:.1}%", left.utilization_pct),
+        mem_style: Style::default().fg(fit_color(left.fit_level, tc)),
+        params: left.model.parameter_count.clone(),
+        params_style: Style::default().fg(tc.fg),
+        context: format!(" {} tokens", left.model.context_length),
+        context_style: Style::default().fg(tc.fg),
+    };
+
+    let right_metrics = CompareMetrics {
+        score: format!("{:.1} ({:+.1}){}", right.score, score_delta, score_hint),
+        score_style,
+        tps: format!("{:.1} ({:+.1}){}", right.estimated_tps, tps_delta, tps_hint),
+        tps_style,
+        mem: format!(
+            "{:.1}% ({:+.1}%){}",
+            right.utilization_pct, mem_delta, mem_hint
+        ),
+        mem_style,
+        params: format!(
+            "{} ({:+.2}B){}",
+            right.model.parameter_count, params_delta, params_hint
+        ),
+        params_style,
+        context: format!(
+            " {} tokens ({:+}){}",
+            right.model.context_length, ctx_delta, ctx_hint
+        ),
+        context_style: ctx_style,
+    };
+
+    render_compare_panel(
+        frame,
+        cols[0],
+        tc,
+        " Marked (baseline) ",
+        left,
+        &left_metrics,
+    );
+    render_compare_panel(
+        frame,
+        cols[1],
+        tc,
+        " Selected (delta vs baseline) ",
+        right,
+        &right_metrics,
+    );
+}
+
+struct CompareMetrics {
+    score: String,
+    score_style: Style,
+    tps: String,
+    tps_style: Style,
+    mem: String,
+    mem_style: Style,
+    params: String,
+    params_style: Style,
+    context: String,
+    context_style: Style,
+}
+
+fn compare_badges(fit: &ModelFit) -> String {
+    let mut tags = Vec::new();
+    if fit.model.is_moe {
+        tags.push("MoE");
+    }
+    if fit.run_mode == llmfit_core::fit::RunMode::MoeOffload {
+        tags.push("Offload");
+    }
+    if !fit.notes.is_empty() {
+        tags.push("Notes");
+    }
+    if tags.is_empty() {
+        "-".to_string()
+    } else {
+        tags.join(", ")
+    }
+}
+
+fn render_compare_panel(
+    frame: &mut Frame,
+    area: Rect,
+    tc: &ThemeColors,
+    title: &str,
+    fit: &ModelFit,
+    metrics: &CompareMetrics,
+) {
+    let lines = vec![
+        Line::from(""),
+        Line::from(vec![
+            Span::styled("  Model: ", Style::default().fg(tc.muted)),
+            Span::styled(fit.model.name.clone(), Style::default().fg(tc.fg).bold()),
+        ]),
+        Line::from(vec![
+            Span::styled("  Provider:", Style::default().fg(tc.muted)),
+            Span::styled(
+                format!(" {}", fit.model.provider),
+                Style::default().fg(tc.fg),
+            ),
+        ]),
+        Line::from(vec![
+            Span::styled("  Use:    ", Style::default().fg(tc.muted)),
+            Span::styled(
+                format!(" {}", fit.use_case.label()),
+                Style::default().fg(tc.fg),
+            ),
+        ]),
+        Line::from(vec![
+            Span::styled("  Released:", Style::default().fg(tc.muted)),
+            Span::styled(
+                format!(
+                    " {}",
+                    fit.model.release_date.as_deref().unwrap_or("Unknown")
+                ),
+                Style::default().fg(tc.fg),
+            ),
+        ]),
+        Line::from(vec![
+            Span::styled("  Score: ", Style::default().fg(tc.muted)),
+            Span::styled(metrics.score.clone(), metrics.score_style),
+        ]),
+        Line::from(vec![
+            Span::styled("  Fit:   ", Style::default().fg(tc.muted)),
+            Span::styled(
+                format!("{} {}", fit_indicator(fit.fit_level), fit.fit_text()),
+                Style::default().fg(fit_color(fit.fit_level, tc)),
+            ),
+        ]),
+        Line::from(vec![
+            Span::styled("  tok/s: ", Style::default().fg(tc.muted)),
+            Span::styled(metrics.tps.clone(), metrics.tps_style),
+        ]),
+        Line::from(vec![
+            Span::styled("  Mem%:  ", Style::default().fg(tc.muted)),
+            Span::styled(metrics.mem.clone(), metrics.mem_style),
+        ]),
+        Line::from(vec![
+            Span::styled("  Runtime:", Style::default().fg(tc.muted)),
+            Span::styled(
+                format!(" {}", fit.runtime_text()),
+                Style::default().fg(tc.fg),
+            ),
+        ]),
+        Line::from(vec![
+            Span::styled("  Mode:   ", Style::default().fg(tc.muted)),
+            Span::styled(fit.run_mode_text(), Style::default().fg(tc.fg)),
+        ]),
+        Line::from(vec![
+            Span::styled("  Params: ", Style::default().fg(tc.muted)),
+            Span::styled(metrics.params.clone(), metrics.params_style),
+        ]),
+        Line::from(vec![
+            Span::styled("  Context:", Style::default().fg(tc.muted)),
+            Span::styled(metrics.context.clone(), metrics.context_style),
+        ]),
+        Line::from(vec![
+            Span::styled("  Quant:  ", Style::default().fg(tc.muted)),
+            Span::styled(
+                format!("{} (default {})", fit.best_quant, fit.model.quantization),
+                Style::default().fg(tc.good),
+            ),
+        ]),
+        Line::from(vec![
+            Span::styled("  Badges: ", Style::default().fg(tc.muted)),
+            Span::styled(compare_badges(fit), Style::default().fg(tc.info)),
+        ]),
+    ];
+
+    frame.render_widget(
+        Paragraph::new(lines).block(
+            Block::default()
+                .borders(Borders::ALL)
+                .border_style(Style::default().fg(tc.border))
+                .title(title)
+                .title_style(Style::default().fg(tc.accent_secondary)),
+        ),
+        area,
+    );
 }
 
 fn draw_detail(frame: &mut Frame, app: &App, area: Rect, tc: &ThemeColors) {
@@ -731,10 +1047,10 @@ fn draw_detail(frame: &mut Frame, app: &App, area: Rect, tc: &ThemeColors) {
             Span::styled("  Runtime:     ", Style::default().fg(tc.muted)),
             Span::styled(
                 fit.runtime_text(),
-                Style::default().fg(if fit.runtime == llmfit_core::fit::InferenceRuntime::Mlx {
-                    tc.accent
-                } else {
-                    tc.fg
+                Style::default().fg(match fit.runtime {
+                    llmfit_core::fit::InferenceRuntime::Mlx => tc.accent,
+                    llmfit_core::fit::InferenceRuntime::Vllm => tc.accent_secondary,
+                    _ => tc.fg,
                 }),
             ),
             Span::styled(
@@ -776,7 +1092,7 @@ fn draw_detail(frame: &mut Frame, app: &App, area: Rect, tc: &ThemeColors) {
                 } else if any_available {
                     Span::styled("✗ No  (press d to pull)", Style::default().fg(tc.muted))
                 } else {
-                    Span::styled("- No provider running", Style::default().fg(tc.muted))
+                    Span::styled("- No runtime detected", Style::default().fg(tc.muted))
                 }
             },
         ]),
@@ -1633,7 +1949,7 @@ fn draw_status_bar(frame: &mut Frame, app: &App, area: Rect, tc: &ThemeColors) {
                 };
                 (
                     format!(
-                        " ↑↓/jk:nav  {}  /:search  f:fit  s:sort  t:theme  p:plan{}  P:providers  U:use cases  C:caps  q:quit  tok/s*:est",
+                        " ↑↓/jk:nav  {}  /:search  f:fit  s:sort  t:theme  p:plan  m:mark  c:compare  x:clear mark{}  P:providers  U:use cases  C:caps  q:quit  tok/s*:est",
                         detail_key, ollama_keys,
                     ),
                     "NORMAL",
@@ -1718,7 +2034,7 @@ fn draw_status_bar(frame: &mut Frame, app: &App, area: Rect, tc: &ThemeColors) {
             };
             (
                 format!(
-                    " ↑↓/jk:nav  {}  /:search  f:fit  s:sort  t:theme  p:plan{}  P:providers  U:use cases  C:caps  q:quit  tok/s*:est",
+                    " ↑↓/jk:nav  {}  /:search  f:fit  s:sort  t:theme  p:plan  m:mark  c:compare  x:clear mark{}  P:providers  U:use cases  C:caps  q:quit  tok/s*:est",
                     detail_key, ollama_keys,
                 ),
                 "NORMAL",
