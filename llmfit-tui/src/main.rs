@@ -904,6 +904,7 @@ fn run_recommend(
         "llamacpp" | "llama.cpp" | "llama_cpp" => {
             fits.retain(|f| f.runtime == llmfit_core::fit::InferenceRuntime::LlamaCpp)
         }
+        "vllm" => fits.retain(|f| f.runtime == llmfit_core::fit::InferenceRuntime::Vllm),
         _ => {} // "any" or unrecognized — keep all
     }
 
@@ -1454,8 +1455,8 @@ fn main() {
         return;
     }
 
-    // If --cli flag, use classic fit output
-    if cli.cli {
+    // If --cli or --json flag, use classic fit output
+    if cli.cli || cli.json {
         run_fit(
             cli.perfect,
             cli.limit,
@@ -1500,6 +1501,7 @@ mod tests {
                 release_date: Some("2025-01-01".to_string()),
                 gguf_sources: vec![],
                 capabilities: vec![],
+                format: llmfit_core::models::ModelFormat::default(),
             },
             fit_level,
             run_mode: RunMode::Gpu,

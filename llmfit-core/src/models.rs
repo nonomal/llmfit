@@ -20,6 +20,10 @@ pub fn quant_bpp(quant: &str) -> f64 {
         "Q2_K" => 0.37,
         "mlx-4bit" => 0.55,
         "mlx-8bit" => 1.0,
+        "AWQ-4bit" => 0.5,
+        "AWQ-8bit" => 1.0,
+        "GPTQ-Int4" => 0.5,
+        "GPTQ-Int8" => 1.0,
         _ => 0.58,
     }
 }
@@ -36,6 +40,8 @@ pub fn quant_speed_multiplier(quant: &str) -> f64 {
         "Q2_K" => 1.35,
         "mlx-4bit" => 1.15,
         "mlx-8bit" => 0.85,
+        "AWQ-4bit" | "GPTQ-Int4" => 1.2,
+        "AWQ-8bit" | "GPTQ-Int8" => 0.85,
         _ => 1.0,
     }
 }
@@ -53,6 +59,8 @@ pub fn quant_bytes_per_param(quant: &str) -> f64 {
         "Q2_K" => 0.25,
         "mlx-4bit" => 0.5,
         "mlx-8bit" => 1.0,
+        "AWQ-4bit" | "GPTQ-Int4" => 0.5,
+        "AWQ-8bit" | "GPTQ-Int8" => 1.0,
         _ => 0.5, // default to ~4-bit
     }
 }
@@ -69,6 +77,10 @@ pub fn quant_quality_penalty(quant: &str) -> f64 {
         "Q2_K" => -12.0,
         "mlx-4bit" => -4.0,
         "mlx-8bit" => 0.0,
+        "AWQ-4bit" => -3.0,
+        "AWQ-8bit" => 0.0,
+        "GPTQ-Int4" => -3.0,
+        "GPTQ-Int8" => 0.0,
         _ => -5.0,
     }
 }
@@ -128,6 +140,31 @@ impl Capability {
         }
 
         caps
+    }
+}
+
+/// Model weight format — determines which inference runtime to use.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ModelFormat {
+    Gguf,
+    Awq,
+    Gptq,
+    Mlx,
+    Safetensors,
+}
+
+impl Default for ModelFormat {
+    fn default() -> Self {
+        ModelFormat::Gguf
+    }
+}
+
+impl ModelFormat {
+    /// Returns true for formats that are pre-quantized at a fixed bit width
+    /// and cannot be dynamically re-quantized (AWQ, GPTQ).
+    pub fn is_prequantized(&self) -> bool {
+        matches!(self, ModelFormat::Awq | ModelFormat::Gptq)
     }
 }
 
@@ -207,6 +244,9 @@ pub struct LlmModel {
     /// Model capabilities (vision, tool use, etc.)
     #[serde(default)]
     pub capabilities: Vec<Capability>,
+    /// Model weight format (gguf, awq, gptq, mlx, safetensors)
+    #[serde(default)]
+    pub format: ModelFormat,
 }
 
 /// A known GGUF download source for a model on HuggingFace.
@@ -225,6 +265,12 @@ impl LlmModel {
     pub fn is_mlx_model(&self) -> bool {
         let name_lower = self.name.to_lowercase();
         name_lower.contains("-mlx-") || name_lower.ends_with("-mlx")
+    }
+
+    /// Returns true if this model uses a pre-quantized format (AWQ/GPTQ)
+    /// that cannot be dynamically re-quantized.
+    pub fn is_prequantized(&self) -> bool {
+        self.format.is_prequantized()
     }
 
     /// Bytes-per-parameter for the model's quantization level.
@@ -359,6 +405,8 @@ struct HfModelEntry {
     gguf_sources: Vec<GgufSource>,
     #[serde(default)]
     capabilities: Vec<Capability>,
+    #[serde(default)]
+    format: ModelFormat,
 }
 
 const HF_MODELS_JSON: &str = include_str!("../data/hf_models.json");
@@ -399,6 +447,7 @@ impl ModelDatabase {
                     release_date: e.release_date,
                     gguf_sources: e.gguf_sources,
                     capabilities: e.capabilities,
+                    format: e.format,
                 };
                 model.capabilities = Capability::infer(&model);
                 model
@@ -495,6 +544,7 @@ mod tests {
             release_date: None,
             gguf_sources: vec![],
             capabilities: vec![],
+            format: ModelFormat::default(),
         };
 
         // Large budget should return mlx-8bit (best in MLX hierarchy)
@@ -565,6 +615,7 @@ mod tests {
             release_date: None,
             gguf_sources: vec![],
             capabilities: vec![],
+            format: ModelFormat::default(),
         };
         assert_eq!(model.params_b(), 7.0);
     }
@@ -589,6 +640,7 @@ mod tests {
             release_date: None,
             gguf_sources: vec![],
             capabilities: vec![],
+            format: ModelFormat::default(),
         };
         assert_eq!(model.params_b(), 13.0);
     }
@@ -613,6 +665,7 @@ mod tests {
             release_date: None,
             gguf_sources: vec![],
             capabilities: vec![],
+            format: ModelFormat::default(),
         };
         assert_eq!(model.params_b(), 0.5);
     }
@@ -637,6 +690,7 @@ mod tests {
             release_date: None,
             gguf_sources: vec![],
             capabilities: vec![],
+            format: ModelFormat::default(),
         };
 
         let mem = model.estimate_memory_gb("Q4_K_M", 4096);
@@ -669,6 +723,7 @@ mod tests {
             release_date: None,
             gguf_sources: vec![],
             capabilities: vec![],
+            format: ModelFormat::default(),
         };
 
         // Large budget should return best quant
@@ -707,6 +762,7 @@ mod tests {
             release_date: None,
             gguf_sources: vec![],
             capabilities: vec![],
+            format: ModelFormat::default(),
         };
         assert!(dense_model.moe_active_vram_gb().is_none());
 
@@ -729,6 +785,7 @@ mod tests {
             release_date: None,
             gguf_sources: vec![],
             capabilities: vec![],
+            format: ModelFormat::default(),
         };
         let vram = moe_model.moe_active_vram_gb();
         assert!(vram.is_some());
@@ -759,6 +816,7 @@ mod tests {
             release_date: None,
             gguf_sources: vec![],
             capabilities: vec![],
+            format: ModelFormat::default(),
         };
         assert!(dense_model.moe_offloaded_ram_gb().is_none());
 
@@ -781,6 +839,7 @@ mod tests {
             release_date: None,
             gguf_sources: vec![],
             capabilities: vec![],
+            format: ModelFormat::default(),
         };
         let offloaded = moe_model.moe_offloaded_ram_gb();
         assert!(offloaded.is_some());
@@ -813,6 +872,7 @@ mod tests {
             release_date: None,
             gguf_sources: vec![],
             capabilities: vec![],
+            format: ModelFormat::default(),
         };
         assert_eq!(UseCase::from_model(&model), UseCase::Coding);
     }
@@ -837,6 +897,7 @@ mod tests {
             release_date: None,
             gguf_sources: vec![],
             capabilities: vec![],
+            format: ModelFormat::default(),
         };
         assert_eq!(UseCase::from_model(&model), UseCase::Embedding);
     }
@@ -861,6 +922,7 @@ mod tests {
             release_date: None,
             gguf_sources: vec![],
             capabilities: vec![],
+            format: ModelFormat::default(),
         };
         assert_eq!(UseCase::from_model(&model), UseCase::Reasoning);
     }
@@ -937,6 +999,7 @@ mod tests {
             release_date: None,
             gguf_sources: vec![],
             capabilities: vec![],
+            format: ModelFormat::default(),
         };
         let caps = Capability::infer(&model);
         assert!(caps.contains(&Capability::Vision));
@@ -964,6 +1027,7 @@ mod tests {
             release_date: None,
             gguf_sources: vec![],
             capabilities: vec![],
+            format: ModelFormat::default(),
         };
         let caps = Capability::infer(&model);
         assert!(caps.contains(&Capability::ToolUse));
@@ -990,6 +1054,7 @@ mod tests {
             release_date: None,
             gguf_sources: vec![],
             capabilities: vec![],
+            format: ModelFormat::default(),
         };
         let caps = Capability::infer(&model);
         assert!(caps.is_empty());
@@ -1015,9 +1080,135 @@ mod tests {
             release_date: None,
             gguf_sources: vec![],
             capabilities: vec![Capability::Vision],
+            format: ModelFormat::default(),
         };
         let caps = Capability::infer(&model);
         // Should keep the explicit Vision and not duplicate it
         assert_eq!(caps.iter().filter(|c| **c == Capability::Vision).count(), 1);
+    }
+
+    #[test]
+    fn test_awq_gptq_quant_values() {
+        // AWQ
+        assert_eq!(quant_bpp("AWQ-4bit"), 0.5);
+        assert_eq!(quant_bpp("AWQ-8bit"), 1.0);
+        assert_eq!(quant_speed_multiplier("AWQ-4bit"), 1.2);
+        assert_eq!(quant_speed_multiplier("AWQ-8bit"), 0.85);
+        assert_eq!(quant_quality_penalty("AWQ-4bit"), -3.0);
+        assert_eq!(quant_quality_penalty("AWQ-8bit"), 0.0);
+        // GPTQ
+        assert_eq!(quant_bpp("GPTQ-Int4"), 0.5);
+        assert_eq!(quant_bpp("GPTQ-Int8"), 1.0);
+        assert_eq!(quant_speed_multiplier("GPTQ-Int4"), 1.2);
+        assert_eq!(quant_speed_multiplier("GPTQ-Int8"), 0.85);
+        assert_eq!(quant_quality_penalty("GPTQ-Int4"), -3.0);
+        assert_eq!(quant_quality_penalty("GPTQ-Int8"), 0.0);
+    }
+
+    #[test]
+    fn test_model_format_prequantized() {
+        assert!(ModelFormat::Awq.is_prequantized());
+        assert!(ModelFormat::Gptq.is_prequantized());
+        assert!(!ModelFormat::Gguf.is_prequantized());
+        assert!(!ModelFormat::Mlx.is_prequantized());
+        assert!(!ModelFormat::Safetensors.is_prequantized());
+    }
+
+    // ────────────────────────────────────────────────────────────────────
+    // GGUF source catalog tests
+    // ────────────────────────────────────────────────────────────────────
+
+    #[test]
+    fn test_gguf_source_deserialization() {
+        let json = r#"{"repo": "unsloth/Llama-3.1-8B-Instruct-GGUF", "provider": "unsloth"}"#;
+        let source: GgufSource = serde_json::from_str(json).unwrap();
+        assert_eq!(source.repo, "unsloth/Llama-3.1-8B-Instruct-GGUF");
+        assert_eq!(source.provider, "unsloth");
+    }
+
+    #[test]
+    fn test_gguf_sources_default_to_empty() {
+        let json = r#"{
+            "name": "test/model",
+            "provider": "Test",
+            "parameter_count": "7B",
+            "parameters_raw": 7000000000,
+            "min_ram_gb": 4.0,
+            "recommended_ram_gb": 8.0,
+            "quantization": "Q4_K_M",
+            "context_length": 4096,
+            "use_case": "General"
+        }"#;
+        let entry: HfModelEntry = serde_json::from_str(json).unwrap();
+        assert!(entry.gguf_sources.is_empty());
+    }
+
+    #[test]
+    fn test_catalog_popular_models_have_gguf_sources() {
+        let db = ModelDatabase::new();
+        // These popular models should have gguf_sources populated in the catalog
+        let expected_with_gguf = [
+            "meta-llama/Llama-3.3-70B-Instruct",
+            "Qwen/Qwen2.5-7B-Instruct",
+            "Qwen/Qwen2.5-Coder-7B-Instruct",
+            "meta-llama/Meta-Llama-3-8B-Instruct",
+            "mistralai/Mistral-7B-Instruct-v0.3",
+        ];
+        for name in &expected_with_gguf {
+            let model = db.get_all_models().iter().find(|m| m.name == *name);
+            assert!(model.is_some(), "Model {} should exist in catalog", name);
+            let model = model.unwrap();
+            assert!(
+                !model.gguf_sources.is_empty(),
+                "Model {} should have gguf_sources but has none",
+                name
+            );
+        }
+    }
+
+    #[test]
+    fn test_catalog_gguf_sources_have_valid_repos() {
+        let db = ModelDatabase::new();
+        for model in db.get_all_models() {
+            for source in &model.gguf_sources {
+                assert!(
+                    source.repo.contains('/'),
+                    "GGUF source repo '{}' for model '{}' should be owner/repo format",
+                    source.repo,
+                    model.name
+                );
+                assert!(
+                    !source.provider.is_empty(),
+                    "GGUF source provider for model '{}' should not be empty",
+                    model.name
+                );
+                assert!(
+                    source.repo.to_uppercase().contains("GGUF"),
+                    "GGUF source repo '{}' for model '{}' should contain 'GGUF'",
+                    source.repo,
+                    model.name
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_catalog_has_significant_gguf_coverage() {
+        let db = ModelDatabase::new();
+        let total = db.get_all_models().len();
+        let with_gguf = db
+            .get_all_models()
+            .iter()
+            .filter(|m| !m.gguf_sources.is_empty())
+            .count();
+        // We should have at least 25% coverage after enrichment
+        let coverage_pct = (with_gguf as f64 / total as f64) * 100.0;
+        assert!(
+            coverage_pct >= 25.0,
+            "GGUF source coverage is only {:.1}% ({}/{}), expected at least 25%",
+            coverage_pct,
+            with_gguf,
+            total
+        );
     }
 }

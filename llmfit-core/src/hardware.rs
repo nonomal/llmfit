@@ -76,11 +76,7 @@ impl SystemSpecs {
         };
 
         let total_cpu_cores = sys.cpus().len();
-        let cpu_name = sys
-            .cpus()
-            .first()
-            .map(|cpu| cpu.brand().to_string())
-            .unwrap_or_else(|| "Unknown CPU".to_string());
+        let cpu_name = Self::detect_cpu_name(&sys);
 
         let gpus = Self::detect_all_gpus(total_ram_gb, &cpu_name);
 
@@ -231,6 +227,16 @@ impl SystemSpecs {
         let ascend = Self::detect_ascend_npus();
         if !ascend.is_empty() {
             gpus.extend(ascend);
+        }
+
+        // Vulkan fallback (e.g. Android/Termux with Turnip)
+        for vulkan_gpu in Self::detect_vulkan_gpu_info() {
+            let dominated = gpus
+                .iter()
+                .any(|existing| Self::is_same_gpu_name(&existing.name, &vulkan_gpu.name));
+            if !dominated {
+                gpus.push(vulkan_gpu);
+            }
         }
 
         // Sort by VRAM descending so the best GPU is primary
@@ -1023,6 +1029,135 @@ impl SystemSpecs {
         }
     }
 
+    fn has_command(command: &str) -> bool {
+        let Some(path_var) = std::env::var_os("PATH") else {
+            return false;
+        };
+
+        for path in std::env::split_paths(&path_var) {
+            let candidate = path.join(command);
+            if candidate.is_file() {
+                return true;
+            }
+
+            #[cfg(target_os = "windows")]
+            for ext in [".exe", ".cmd", ".bat", ".com"] {
+                let candidate = path.join(format!("{command}{ext}"));
+                if candidate.is_file() {
+                    return true;
+                }
+            }
+        }
+
+        false
+    }
+
+    /// Detect GPUs via Vulkan. This is especially useful on Android/Termux,
+    /// where vendor-specific Linux utilities may be unavailable.
+    fn detect_vulkan_gpu_info() -> Vec<GpuInfo> {
+        if !Self::has_command("vulkaninfo") {
+            return Vec::new();
+        }
+
+        let output = match std::process::Command::new("vulkaninfo")
+            .arg("--summary")
+            .output()
+        {
+            Ok(o) if o.status.success() => o,
+            _ => match std::process::Command::new("vulkaninfo").output() {
+                Ok(o) if o.status.success() => o,
+                _ => return Vec::new(),
+            },
+        };
+
+        let text = String::from_utf8_lossy(&output.stdout);
+        let mut grouped: BTreeMap<String, u32> = BTreeMap::new();
+
+        for name in Self::parse_vulkan_device_names(&text) {
+            if Self::is_software_vulkan_device(&name) {
+                continue;
+            }
+            *grouped.entry(name).or_insert(0) += 1;
+        }
+
+        grouped
+            .into_iter()
+            .map(|(name, count)| GpuInfo {
+                backend: GpuBackend::Vulkan,
+                count,
+                name,
+                unified_memory: false,
+                vram_gb: None,
+            })
+            .collect()
+    }
+
+    fn is_same_gpu_name(existing_name: &str, candidate_name: &str) -> bool {
+        Self::normalize_gpu_name_for_dedupe(existing_name)
+            == Self::normalize_gpu_name_for_dedupe(candidate_name)
+    }
+
+    fn normalize_gpu_name_for_dedupe(name: &str) -> String {
+        let mut normalized = String::with_capacity(name.len());
+        let mut last_was_separator = true;
+
+        for ch in name.chars().flat_map(char::to_lowercase) {
+            if ch.is_alphanumeric() {
+                normalized.push(ch);
+                last_was_separator = false;
+            } else if !last_was_separator {
+                normalized.push(' ');
+                last_was_separator = true;
+            }
+        }
+
+        normalized.trim().to_string()
+    }
+
+    fn parse_vulkan_device_names(text: &str) -> Vec<String> {
+        let mut names = Vec::new();
+
+        for line in text.lines() {
+            let trimmed = line.trim();
+            if trimmed.is_empty() {
+                continue;
+            }
+
+            if let Some((key, value)) = trimmed.split_once('=') {
+                if key.trim().eq_ignore_ascii_case("deviceName") {
+                    let name = value.trim();
+                    if !name.is_empty() {
+                        names.push(name.to_string());
+                    }
+                    continue;
+                }
+            }
+
+            if let Some(rest) = trimmed.strip_prefix("GPU id") {
+                if let Some(start) = rest.find('(') {
+                    if let Some(end) = rest.rfind(')') {
+                        if end > start + 1 {
+                            let name = rest[start + 1..end].trim();
+                            if !name.is_empty() {
+                                names.push(name.to_string());
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        names
+    }
+
+    fn is_software_vulkan_device(name: &str) -> bool {
+        let lower = name.to_lowercase();
+        lower.contains("llvmpipe")
+            || lower.contains("lavapipe")
+            || lower.contains("swiftshader")
+            || lower.contains("software rasterizer")
+    }
+
     /// Detect Ascend NPUs via npu-smi. Returns a vector of NPU info.
     fn detect_ascend_npus() -> Vec<GpuInfo> {
         // 1. Get the list of IDs
@@ -1157,6 +1292,84 @@ impl SystemSpecs {
             .trim_end_matches('.')
             .parse()
             .ok()
+    }
+
+    fn detect_cpu_name(sys: &System) -> String {
+        if let Some(cpu_name) = sys
+            .cpus()
+            .iter()
+            .map(|cpu| cpu.brand().trim())
+            .find(|brand| !brand.is_empty() && !brand.eq_ignore_ascii_case("unknown"))
+        {
+            return cpu_name.to_string();
+        }
+
+        if let Some(cpu_name) = Self::read_cpu_name_from_proc_cpuinfo() {
+            return cpu_name;
+        }
+
+        if let Some(cpu_name) = Self::read_android_soc_name() {
+            return cpu_name;
+        }
+
+        "Unknown CPU".to_string()
+    }
+
+    fn read_cpu_name_from_proc_cpuinfo() -> Option<String> {
+        #[cfg(target_os = "linux")]
+        {
+            let text = std::fs::read_to_string("/proc/cpuinfo").ok()?;
+            return Self::parse_cpu_name_from_cpuinfo(&text);
+        }
+
+        #[cfg(not(target_os = "linux"))]
+        {
+            None
+        }
+    }
+
+    fn parse_cpu_name_from_cpuinfo(text: &str) -> Option<String> {
+        for key in ["model name", "hardware", "processor", "cpu model", "model"] {
+            for line in text.lines() {
+                let Some((lhs, rhs)) = line.split_once(':') else {
+                    continue;
+                };
+                if lhs.trim().eq_ignore_ascii_case(key) {
+                    let candidate = rhs.trim();
+                    if !candidate.is_empty() && !candidate.eq_ignore_ascii_case("unknown") {
+                        return Some(candidate.to_string());
+                    }
+                }
+            }
+        }
+
+        None
+    }
+
+    fn read_android_soc_name() -> Option<String> {
+        #[cfg(target_os = "linux")]
+        {
+            let output = std::process::Command::new("getprop")
+                .arg("ro.soc.model")
+                .output()
+                .ok()?;
+            if !output.status.success() {
+                return None;
+            }
+
+            let model = String::from_utf8(output.stdout).ok()?;
+            let model = model.trim();
+            if model.is_empty() {
+                return None;
+            }
+
+            return Some(model.to_string());
+        }
+
+        #[cfg(not(target_os = "linux"))]
+        {
+            None
+        }
     }
 
     /// Override the primary GPU's VRAM with a user-specified value (in GB).
@@ -1720,7 +1933,7 @@ fn estimate_vram_from_name(name: &str) -> f64 {
     if lower.contains("3060") {
         return 12.0;
     }
-    // Data center
+    // Data center / professional
     if lower.contains("h100") {
         return 80.0;
     }
@@ -1729,6 +1942,25 @@ fn estimate_vram_from_name(name: &str) -> f64 {
     }
     if lower.contains("l40") {
         return 48.0;
+    }
+    // NVIDIA RTX professional (Ampere) — must be checked before the broad "a10" match
+    if lower.contains("a6000") {
+        return 48.0;
+    }
+    if lower.contains("a5500") {
+        return 24.0;
+    }
+    if lower.contains("a5000") {
+        return 24.0;
+    }
+    if lower.contains("a4500") {
+        return 20.0;
+    }
+    if lower.contains("a4000") {
+        return 16.0;
+    }
+    if lower.contains("a2000") {
+        return 12.0;
     }
     if lower.contains("a10") {
         return 24.0;
@@ -1916,6 +2148,16 @@ mod tests {
     }
 
     #[test]
+    fn test_estimate_vram_rtx_professional() {
+        assert_eq!(super::estimate_vram_from_name("NVIDIA RTX A6000"), 48.0);
+        assert_eq!(super::estimate_vram_from_name("NVIDIA RTX A5500"), 24.0);
+        assert_eq!(super::estimate_vram_from_name("NVIDIA RTX A5000"), 24.0);
+        assert_eq!(super::estimate_vram_from_name("NVIDIA RTX A4500"), 20.0);
+        assert_eq!(super::estimate_vram_from_name("NVIDIA RTX A4000"), 16.0);
+        assert_eq!(super::estimate_vram_from_name("NVIDIA RTX A2000"), 12.0);
+    }
+
+    #[test]
     fn test_parse_extended_discrete_gpu_not_unified() {
         // Discrete GPU: addressing_mode is "None", VRAM is reported normally
         let text = "None, 24564, NVIDIA GeForce RTX 4090\n";
@@ -2006,6 +2248,401 @@ mod tests {
         assert_eq!(
             super::gpu_memory_bandwidth_gbps("AMD Instinct MI300X"),
             Some(5300.0)
+        );
+    }
+
+    #[test]
+    fn test_parse_cpu_name_from_cpuinfo_prefers_model_name() {
+        let cpuinfo = "\
+processor   : 0
+model name  : Qualcomm Kryo 680
+Hardware    : Qualcomm Technologies, Inc SM8350
+";
+        assert_eq!(
+            SystemSpecs::parse_cpu_name_from_cpuinfo(cpuinfo),
+            Some("Qualcomm Kryo 680".to_string())
+        );
+    }
+
+    #[test]
+    fn test_parse_cpu_name_from_cpuinfo_uses_hardware_fallback() {
+        let cpuinfo = "\
+processor   : 0
+Hardware    : Qualcomm Technologies, Inc SM8650
+";
+        assert_eq!(
+            SystemSpecs::parse_cpu_name_from_cpuinfo(cpuinfo),
+            Some("Qualcomm Technologies, Inc SM8650".to_string())
+        );
+    }
+
+    #[test]
+    fn test_parse_vulkan_device_names_from_summary_output() {
+        let text = "\
+GPU0:
+deviceName         = Adreno (TM) 740
+GPU1:
+deviceName         = llvmpipe (LLVM 17.0.0, 256 bits)
+";
+        let names = SystemSpecs::parse_vulkan_device_names(text);
+        assert_eq!(
+            names,
+            vec![
+                "Adreno (TM) 740".to_string(),
+                "llvmpipe (LLVM 17.0.0, 256 bits)".to_string()
+            ]
+        );
+    }
+
+    #[test]
+    fn test_parse_vulkan_device_names_from_gpu_id_lines() {
+        let text = "\
+GPU id = 0 (Adreno (TM) 740)
+GPU id = 1 (NVIDIA GeForce RTX 4090)
+";
+        let names = SystemSpecs::parse_vulkan_device_names(text);
+        assert_eq!(
+            names,
+            vec![
+                "Adreno (TM) 740".to_string(),
+                "NVIDIA GeForce RTX 4090".to_string()
+            ]
+        );
+    }
+
+    #[test]
+    fn test_is_software_vulkan_device() {
+        assert!(SystemSpecs::is_software_vulkan_device(
+            "llvmpipe (LLVM 17.0.0, 256 bits)"
+        ));
+        assert!(SystemSpecs::is_software_vulkan_device("SwiftShader Device"));
+        assert!(!SystemSpecs::is_software_vulkan_device("Adreno (TM) 740"));
+    }
+
+    #[test]
+    fn test_is_same_gpu_name_uses_normalized_exact_match() {
+        assert!(SystemSpecs::is_same_gpu_name(
+            "NVIDIA-GeForce RTX 4090",
+            "nvidia geforce rtx 4090"
+        ));
+        assert!(!SystemSpecs::is_same_gpu_name("RTX", "RTX 4090"));
+    }
+
+    #[test]
+    fn test_normalize_gpu_name_for_dedupe() {
+        assert_eq!(
+            SystemSpecs::normalize_gpu_name_for_dedupe(" Adreno (TM) 740 "),
+            "adreno tm 740"
+        );
+    }
+
+    // ── GpuBackend::label ────────────────────────────────────────────
+
+    #[test]
+    fn test_gpu_backend_labels() {
+        assert_eq!(super::GpuBackend::Cuda.label(), "CUDA");
+        assert_eq!(super::GpuBackend::Metal.label(), "Metal");
+        assert_eq!(super::GpuBackend::Rocm.label(), "ROCm");
+        assert_eq!(super::GpuBackend::Vulkan.label(), "Vulkan");
+        assert_eq!(super::GpuBackend::Sycl.label(), "SYCL");
+        assert_eq!(super::GpuBackend::CpuArm.label(), "CPU (ARM)");
+        assert_eq!(super::GpuBackend::CpuX86.label(), "CPU (x86)");
+        assert_eq!(super::GpuBackend::Ascend.label(), "NPU (Ascend)");
+    }
+
+    // ── parse_memory_size ────────────────────────────────────────────
+
+    #[test]
+    fn test_parse_memory_size_gb() {
+        assert_eq!(super::parse_memory_size("32G"), Some(32.0));
+        assert_eq!(super::parse_memory_size("32GB"), Some(32.0));
+        assert_eq!(super::parse_memory_size("32GiB"), Some(32.0));
+        assert_eq!(super::parse_memory_size("24g"), Some(24.0));
+        assert_eq!(super::parse_memory_size("24gb"), Some(24.0));
+    }
+
+    #[test]
+    fn test_parse_memory_size_mb() {
+        let result = super::parse_memory_size("16384M").unwrap();
+        assert!((result - 16.0).abs() < 0.01);
+        let result = super::parse_memory_size("8192MB").unwrap();
+        assert!((result - 8.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_parse_memory_size_tb() {
+        let result = super::parse_memory_size("1T").unwrap();
+        assert!((result - 1024.0).abs() < 0.01);
+        let result = super::parse_memory_size("2TB").unwrap();
+        assert!((result - 2048.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_parse_memory_size_bare_number() {
+        assert_eq!(super::parse_memory_size("16"), Some(16.0));
+    }
+
+    #[test]
+    fn test_parse_memory_size_whitespace() {
+        assert_eq!(super::parse_memory_size("  32G  "), Some(32.0));
+    }
+
+    #[test]
+    fn test_parse_memory_size_empty() {
+        assert_eq!(super::parse_memory_size(""), None);
+        assert_eq!(super::parse_memory_size("  "), None);
+    }
+
+    #[test]
+    fn test_parse_memory_size_invalid_suffix() {
+        assert_eq!(super::parse_memory_size("32X"), None);
+        assert_eq!(super::parse_memory_size("32KB"), None);
+    }
+
+    #[test]
+    fn test_parse_memory_size_fractional() {
+        assert_eq!(super::parse_memory_size("16.5G"), Some(16.5));
+    }
+
+    // ── with_gpu_memory_override ─────────────────────────────────────
+
+    fn make_specs_no_gpu() -> SystemSpecs {
+        SystemSpecs {
+            total_ram_gb: 32.0,
+            available_ram_gb: 24.0,
+            total_cpu_cores: 8,
+            cpu_name: "Test CPU".to_string(),
+            has_gpu: false,
+            gpu_vram_gb: None,
+            total_gpu_vram_gb: None,
+            gpu_name: None,
+            gpu_count: 0,
+            unified_memory: false,
+            backend: super::GpuBackend::CpuX86,
+            gpus: vec![],
+        }
+    }
+
+    fn make_specs_with_gpu() -> SystemSpecs {
+        SystemSpecs {
+            total_ram_gb: 32.0,
+            available_ram_gb: 24.0,
+            total_cpu_cores: 8,
+            cpu_name: "Test CPU".to_string(),
+            has_gpu: true,
+            gpu_vram_gb: Some(8.0),
+            total_gpu_vram_gb: Some(8.0),
+            gpu_name: Some("NVIDIA RTX 3070".to_string()),
+            gpu_count: 1,
+            unified_memory: false,
+            backend: super::GpuBackend::Cuda,
+            gpus: vec![super::GpuInfo {
+                name: "NVIDIA RTX 3070".to_string(),
+                vram_gb: Some(8.0),
+                backend: super::GpuBackend::Cuda,
+                count: 1,
+                unified_memory: false,
+            }],
+        }
+    }
+
+    #[test]
+    fn test_gpu_override_creates_synthetic_gpu_when_none() {
+        let specs = make_specs_no_gpu().with_gpu_memory_override(24.0);
+        assert!(specs.has_gpu);
+        assert_eq!(specs.gpu_vram_gb, Some(24.0));
+        assert_eq!(specs.total_gpu_vram_gb, Some(24.0));
+        assert_eq!(specs.gpu_count, 1);
+        assert_eq!(specs.gpus.len(), 1);
+        assert_eq!(specs.gpus[0].name, "User-specified GPU");
+    }
+
+    #[test]
+    fn test_gpu_override_updates_existing_gpu() {
+        let specs = make_specs_with_gpu().with_gpu_memory_override(24.0);
+        assert_eq!(specs.gpu_vram_gb, Some(24.0));
+        assert_eq!(specs.total_gpu_vram_gb, Some(24.0));
+        assert_eq!(specs.gpus[0].vram_gb, Some(24.0));
+        assert_eq!(specs.gpus[0].name, "NVIDIA RTX 3070");
+    }
+
+    #[test]
+    fn test_gpu_override_multi_gpu_scales_total() {
+        let mut specs = make_specs_with_gpu();
+        specs.gpus[0].count = 2;
+        let specs = specs.with_gpu_memory_override(24.0);
+        assert_eq!(specs.gpu_vram_gb, Some(24.0));
+        assert_eq!(specs.total_gpu_vram_gb, Some(48.0));
+    }
+
+    // ── is_amd_unified_memory_apu ────────────────────────────────────
+
+    #[test]
+    fn test_amd_unified_memory_apu_detection() {
+        assert!(super::is_amd_unified_memory_apu(
+            "AMD Ryzen AI MAX+ 395 w/ Radeon 8060S"
+        ));
+        assert!(super::is_amd_unified_memory_apu(
+            "AMD Ryzen AI 9 HX 370 w/ Radeon 890M"
+        ));
+        assert!(super::is_amd_unified_memory_apu("AMD Ryzen AI 7 350"));
+        assert!(!super::is_amd_unified_memory_apu("AMD Ryzen 9 7950X"));
+        assert!(!super::is_amd_unified_memory_apu("Intel Core i9-14900K"));
+    }
+
+    // ── bandwidth: RTX 20 series ─────────────────────────────────────
+
+    #[test]
+    fn test_bandwidth_rtx_20_series() {
+        assert_eq!(
+            super::gpu_memory_bandwidth_gbps("NVIDIA GeForce RTX 2080 Ti"),
+            Some(616.0)
+        );
+        assert_eq!(
+            super::gpu_memory_bandwidth_gbps("NVIDIA GeForce RTX 2060"),
+            Some(336.0)
+        );
+    }
+
+    // ── bandwidth: GTX 16 series ─────────────────────────────────────
+
+    #[test]
+    fn test_bandwidth_gtx_16_series() {
+        assert_eq!(
+            super::gpu_memory_bandwidth_gbps("NVIDIA GeForce GTX 1660 Ti"),
+            Some(288.0)
+        );
+        assert_eq!(
+            super::gpu_memory_bandwidth_gbps("NVIDIA GeForce GTX 1650"),
+            Some(128.0)
+        );
+    }
+
+    // ── bandwidth: RTX 50 series ─────────────────────────────────────
+
+    #[test]
+    fn test_bandwidth_rtx_50_series() {
+        assert_eq!(
+            super::gpu_memory_bandwidth_gbps("NVIDIA GeForce RTX 5090"),
+            Some(1792.0)
+        );
+        assert_eq!(
+            super::gpu_memory_bandwidth_gbps("NVIDIA GeForce RTX 5080"),
+            Some(960.0)
+        );
+        assert_eq!(
+            super::gpu_memory_bandwidth_gbps("NVIDIA GeForce RTX 5070 Ti"),
+            Some(896.0)
+        );
+        assert_eq!(
+            super::gpu_memory_bandwidth_gbps("NVIDIA GeForce RTX 5070"),
+            Some(672.0)
+        );
+        assert_eq!(
+            super::gpu_memory_bandwidth_gbps("NVIDIA GeForce RTX 5060 Ti"),
+            Some(448.0)
+        );
+        assert_eq!(
+            super::gpu_memory_bandwidth_gbps("NVIDIA GeForce RTX 5060"),
+            Some(256.0)
+        );
+    }
+
+    // ── bandwidth: AMD RX 6000 series ────────────────────────────────
+
+    #[test]
+    fn test_bandwidth_amd_rx_6000() {
+        assert_eq!(
+            super::gpu_memory_bandwidth_gbps("AMD Radeon RX 6950 XT"),
+            Some(576.0)
+        );
+        assert_eq!(
+            super::gpu_memory_bandwidth_gbps("AMD Radeon RX 6700 XT"),
+            Some(384.0)
+        );
+        assert_eq!(
+            super::gpu_memory_bandwidth_gbps("AMD Radeon RX 6600"),
+            Some(224.0)
+        );
+    }
+
+    // ── bandwidth: NVIDIA professional ───────────────────────────────
+
+    #[test]
+    fn test_bandwidth_nvidia_professional() {
+        assert_eq!(
+            super::gpu_memory_bandwidth_gbps("NVIDIA RTX A6000"),
+            Some(768.0)
+        );
+        assert_eq!(
+            super::gpu_memory_bandwidth_gbps("NVIDIA RTX A4000"),
+            Some(448.0)
+        );
+        assert_eq!(super::gpu_memory_bandwidth_gbps("NVIDIA L40S"), Some(864.0));
+        assert_eq!(super::gpu_memory_bandwidth_gbps("NVIDIA L4"), Some(300.0));
+    }
+
+    // ── bandwidth: Apple Silicon all variants ────────────────────────
+
+    #[test]
+    fn test_bandwidth_apple_silicon_all() {
+        assert_eq!(
+            super::gpu_memory_bandwidth_gbps("Apple M4 Ultra"),
+            Some(819.0)
+        );
+        assert_eq!(super::gpu_memory_bandwidth_gbps("Apple M4"), Some(120.0));
+        assert_eq!(
+            super::gpu_memory_bandwidth_gbps("Apple M3 Ultra"),
+            Some(800.0)
+        );
+        assert_eq!(
+            super::gpu_memory_bandwidth_gbps("Apple M3 Max"),
+            Some(400.0)
+        );
+        assert_eq!(
+            super::gpu_memory_bandwidth_gbps("Apple M3 Pro"),
+            Some(150.0)
+        );
+        assert_eq!(super::gpu_memory_bandwidth_gbps("Apple M3"), Some(100.0));
+        assert_eq!(
+            super::gpu_memory_bandwidth_gbps("Apple M1 Pro"),
+            Some(200.0)
+        );
+        assert_eq!(
+            super::gpu_memory_bandwidth_gbps("Apple M1 Ultra"),
+            Some(800.0)
+        );
+    }
+
+    // ── bandwidth: AMD CDNA ──────────────────────────────────────────
+
+    #[test]
+    fn test_bandwidth_amd_cdna() {
+        assert_eq!(
+            super::gpu_memory_bandwidth_gbps("AMD Instinct MI250X"),
+            Some(3277.0)
+        );
+        assert_eq!(
+            super::gpu_memory_bandwidth_gbps("AMD Instinct MI210"),
+            Some(1638.0)
+        );
+        assert_eq!(
+            super::gpu_memory_bandwidth_gbps("AMD Instinct MI100"),
+            Some(1229.0)
+        );
+    }
+
+    // ── bandwidth: AMD RDNA 4 ────────────────────────────────────────
+
+    #[test]
+    fn test_bandwidth_amd_rdna4() {
+        assert_eq!(
+            super::gpu_memory_bandwidth_gbps("AMD Radeon RX 9070 XT"),
+            Some(624.0)
+        );
+        assert_eq!(
+            super::gpu_memory_bandwidth_gbps("AMD Radeon RX 9070"),
+            Some(488.0)
         );
     }
 }

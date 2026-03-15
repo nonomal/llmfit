@@ -13,7 +13,7 @@
 
 A terminal tool that right-sizes LLM models to your system's RAM, CPU, and GPU. Detects your hardware, scores each model across quality, speed, fit, and context dimensions, and tells you which ones will actually run well on your machine.
 
-Ships with an interactive TUI (default) and a classic CLI mode. Supports multi-GPU setups, MoE architectures, dynamic quantization selection, speed estimation, and local runtime providers (Ollama, llama.cpp, MLX).
+Ships with an interactive TUI (default) and a classic CLI mode. Supports multi-GPU setups, MoE architectures, dynamic quantization selection, speed estimation, and local runtime providers (Ollama, llama.cpp, MLX, Docker Model Runner).
 
 > **Sister project:** Check out [sympozium](https://github.com/AlexsJones/sympozium/) for managing agents in Kubernetes.
 
@@ -49,6 +49,15 @@ Downloads the latest release binary from GitHub and installs it to `/usr/local/b
 curl -fsSL https://llmfit.axjns.dev/install.sh | sh -s -- --local
 ```
 
+### Docker / Podman
+```sh
+docker run ghcr.io/alexsjones/llmfit
+```
+This prints JSON from `llmfit recommend` command. The JSON could be further queried with `jq`.
+```
+podman run ghcr.io/alexsjones/llmfit recommend --use-case coding | jq '.models[].name'
+```
+
 ### From source
 ```sh
 git clone https://github.com/AlexsJones/llmfit.git
@@ -78,17 +87,62 @@ Launches the interactive terminal UI. Your system specs (CPU, RAM, GPU name, VRA
 | `f` | Cycle fit filter: All, Runnable, Perfect, Good, Marginal |
 | `a` | Cycle availability filter: All, GGUF Avail, Installed |
 | `s` | Cycle sort column: Score, Params, Mem%, Ctx, Date, Use Case |
+| `v` | Enter Visual mode (select multiple models) |
+| `V` | Enter Select mode (column-based filtering) |
 | `t` | Cycle color theme (saved automatically) |
 | `p` | Open Plan mode for selected model (hardware planning) |
 | `P` | Open provider filter popup |
+| `U` | Open use-case filter popup |
+| `C` | Open capability filter popup |
+| `m` | Mark selected model for compare |
+| `c` | Open compare view (marked vs selected) |
+| `x` | Clear compare mark |
 | `i` | Toggle installed-first sorting (any detected runtime provider) |
 | `d` | Download selected model (provider picker when multiple are available) |
 | `r` | Refresh installed models from runtime providers |
-| `1`-`9` | Toggle provider visibility |
 | `Enter` | Toggle detail view for selected model |
 | `PgUp` / `PgDn` | Scroll by 10 |
 | `g` / `G` | Jump to top / bottom |
 | `q` | Quit |
+
+### Vim-like modes
+
+The TUI uses Vim-inspired modes shown in the bottom-left status bar. The current mode determines which keys are active.
+
+#### Normal mode
+
+The default mode. Navigate, search, filter, and open views. All keys in the table above apply here.
+
+#### Visual mode (`v`)
+
+Select a contiguous range of models for bulk comparison. Press `v` to anchor at the current row, then navigate with `j`/`k` or arrow keys to extend the selection. Selected rows are highlighted.
+
+| Key | Action |
+|---|---|
+| `j` / `k` or arrows | Extend selection up/down |
+| `c` | Compare all selected models (opens multi-compare view) |
+| `m` | Mark current model for two-model compare |
+| `Esc` or `v` | Exit Visual mode |
+
+The multi-compare view displays a table where rows are attributes (Score, tok/s, Fit, Mem%, Params, Mode, Context, Quant, etc.) and columns are models. Best values are highlighted. Use `h`/`l` or arrow keys to scroll horizontally if more models are selected than fit on screen.
+
+#### Select mode (`V`)
+
+Column-based filtering. Press `V` (shift-v) to enter Select mode, then use `h`/`l` or arrow keys to move between column headers. The active column is visually highlighted. Press `Enter` or `Space` to activate the appropriate filter for that column:
+
+| Column | Filter action |
+|---|---|
+| Inst | Cycle availability filter |
+| Model | Enter search mode |
+| Provider | Open provider popup |
+| Params | Open parameter-size bucket popup (<3B, 3-7B, 7-14B, 14-30B, 30-70B, 70B+) |
+| Score, tok/s, Mem%, Ctx, Date | Sort by that column |
+| Quant | Open quantization popup |
+| Mode | Open run-mode popup (GPU, MoE, CPU+GPU, CPU) |
+| Fit | Cycle fit filter |
+| Use Case | Open use-case popup |
+
+Row navigation (`j`/`k`) still works in Select mode so you can see the effect of filters as you apply them. Press `Esc` to return to Normal mode.
 
 ### TUI Plan mode (`p`)
 
@@ -361,7 +415,7 @@ src/
   hardware.rs     -- System RAM/CPU/GPU detection (multi-GPU, backend identification)
   models.rs       -- Model database, quantization hierarchy, dynamic quant selection
   fit.rs          -- Multi-dimensional scoring (Q/S/F/C), speed estimation, MoE offloading
-  providers.rs    -- Runtime provider integration (Ollama, llama.cpp, MLX), install detection, pull/download
+  providers.rs    -- Runtime provider integration (Ollama, llama.cpp, MLX, Docker Model Runner), install detection, pull/download
   display.rs      -- Classic CLI table rendering + JSON output
   tui_app.rs      -- TUI application state, filters, navigation
   tui_ui.rs       -- TUI rendering (ratatui)
@@ -438,6 +492,7 @@ llmfit supports multiple local runtime providers:
 - **Ollama** (daemon/API based pulls)
 - **llama.cpp** (direct GGUF downloads from Hugging Face + local cache detection)
 - **MLX** (Apple Silicon / mlx-community model cache + optional server)
+- **Docker Model Runner** (Docker Desktop's built-in model serving)
 
 When more than one compatible provider is available for a model, pressing `d` in the TUI opens a provider picker modal.
 
@@ -495,6 +550,29 @@ How it works:
 - downloads GGUF files into the local llama.cpp model cache
 - marks models installed when matching GGUF files are present locally
 
+### Docker Model Runner integration
+
+llmfit integrates with [Docker Model Runner](https://docs.docker.com/desktop/features/model-runner/), Docker Desktop's built-in model serving feature.
+
+Requirements:
+
+- Docker Desktop with Model Runner enabled
+- Default endpoint: `http://localhost:12434`
+
+How it works:
+
+- llmfit queries `GET /engines` to list models available in Docker Model Runner
+- models are matched to the HF database using Ollama-style tag mapping (Docker Model Runner uses `ai/<tag>` naming)
+- pressing `d` in the TUI pulls via `docker model pull`
+
+### Remote Docker Model Runner instances
+
+To connect to Docker Model Runner on a different host or port, set the `DOCKER_MODEL_RUNNER_HOST` environment variable:
+
+```sh
+DOCKER_MODEL_RUNNER_HOST="http://192.168.1.100:12434" llmfit
+```
+
 ### Model name mapping
 
 llmfit's database uses HuggingFace model names (e.g. `Qwen/Qwen2.5-Coder-14B-Instruct`) while Ollama uses its own naming scheme (e.g. `qwen2.5-coder:14b`). llmfit maintains an accurate mapping table between the two so that install detection and pulls resolve to the correct model. Each mapping is exact — `qwen2.5-coder:14b` maps to the Coder model, not the base `qwen2.5:14b`.
@@ -507,6 +585,7 @@ llmfit's database uses HuggingFace model names (e.g. `Qwen/Qwen2.5-Coder-14B-Ins
 - **macOS (Apple Silicon)** -- Full support. Detects unified memory via `system_profiler`. VRAM = system RAM (shared pool). Models run via Metal GPU acceleration.
 - **macOS (Intel)** -- RAM and CPU detection works. Discrete GPU detection if `nvidia-smi` available.
 - **Windows** -- RAM and CPU detection works. NVIDIA GPU detection via `nvidia-smi` if installed.
+- **Android / Termux / PRoot** -- CPU and RAM detection usually work, but GPU autodetection is not currently supported. Mobile GPUs such as Adreno typically are not visible through the desktop/server probing interfaces llmfit uses.
 
 ### GPU support
 
@@ -520,6 +599,19 @@ llmfit's database uses HuggingFace model names (e.g. `Qwen/Qwen2.5-Coder-14B-Ins
 | Ascend | `npu-smi` | Detected (VRAM may be unknown) |
 
 If autodetection fails or reports incorrect values, use `--memory=<SIZE>` to override (see [GPU memory override](#gpu-memory-override) above).
+
+### Android / Termux note
+
+On Android setups such as **Termux + PRoot**, llmfit usually cannot see mobile GPUs through the standard Linux detection paths (`nvidia-smi`, `rocm-smi`, DRM/sysfs, `lspci`, etc.). In those environments, "no GPU detected" is expected with the current implementation.
+
+If you still want GPU-style recommendations on a unified-memory phone or tablet, use a manual memory override:
+
+```sh
+llmfit --memory=8G fit -n 20
+llmfit recommend --json --memory=8G --limit 10
+```
+
+This is a workaround for recommendation/scoring only; it does not provide true Android GPU runtime detection.
 
 ---
 

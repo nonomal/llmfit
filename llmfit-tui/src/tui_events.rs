@@ -17,12 +17,17 @@ pub fn handle_events(app: &mut App) -> std::io::Result<bool> {
         }
         match app.input_mode {
             InputMode::Normal => handle_normal_mode(app, key),
+            InputMode::Visual => handle_visual_mode(app, key),
+            InputMode::Select => handle_select_mode(app, key),
             InputMode::Search => handle_search_mode(app, key),
             InputMode::Plan => handle_plan_mode(app, key),
             InputMode::ProviderPopup => handle_provider_popup_mode(app, key),
             InputMode::UseCasePopup => handle_use_case_popup_mode(app, key),
             InputMode::CapabilityPopup => handle_capability_popup_mode(app, key),
             InputMode::DownloadProviderPopup => handle_download_provider_popup_mode(app, key),
+            InputMode::QuantPopup => handle_quant_popup_mode(app, key),
+            InputMode::RunModePopup => handle_run_mode_popup_mode(app, key),
+            InputMode::ParamsBucketPopup => handle_params_bucket_popup_mode(app, key),
         }
         return Ok(true);
     }
@@ -33,7 +38,9 @@ fn handle_normal_mode(app: &mut App, key: KeyEvent) {
     match key.code {
         // Quit
         KeyCode::Char('q') | KeyCode::Esc => {
-            if app.show_detail {
+            if app.show_multi_compare {
+                app.close_multi_compare();
+            } else if app.show_detail {
                 app.show_detail = false;
             } else if app.show_compare {
                 app.show_compare = false;
@@ -42,7 +49,12 @@ fn handle_normal_mode(app: &mut App, key: KeyEvent) {
             }
         }
 
-        // Navigation
+        // Navigation — in multi-compare, h/l scroll columns
+        KeyCode::Char('h') if app.show_multi_compare => app.multi_compare_scroll_left(),
+        KeyCode::Char('l') if app.show_multi_compare => app.multi_compare_scroll_right(),
+        KeyCode::Left if app.show_multi_compare => app.multi_compare_scroll_left(),
+        KeyCode::Right if app.show_multi_compare => app.multi_compare_scroll_right(),
+
         KeyCode::Char('u') if key.modifiers.contains(KeyModifiers::CONTROL) => app.half_page_up(),
         KeyCode::Char('d') if key.modifiers.contains(KeyModifiers::CONTROL) => app.half_page_down(),
         KeyCode::Up | KeyCode::Char('k') => app.move_up(),
@@ -51,6 +63,12 @@ fn handle_normal_mode(app: &mut App, key: KeyEvent) {
         KeyCode::PageDown => app.page_down(),
         KeyCode::Home | KeyCode::Char('g') => app.home(),
         KeyCode::End | KeyCode::Char('G') => app.end(),
+
+        // Visual mode
+        KeyCode::Char('v') => app.enter_visual_mode(),
+
+        // Select mode
+        KeyCode::Char('V') => app.enter_select_mode(),
 
         // Search
         KeyCode::Char('/') => app.enter_search(),
@@ -105,6 +123,51 @@ fn handle_normal_mode(app: &mut App, key: KeyEvent) {
         KeyCode::Char('m') => app.mark_selected_for_compare(),
         KeyCode::Char('c') => app.toggle_compare_view(),
         KeyCode::Char('x') => app.clear_compare_mark(),
+
+        _ => {}
+    }
+}
+
+fn handle_visual_mode(app: &mut App, key: KeyEvent) {
+    match key.code {
+        // Exit visual mode
+        KeyCode::Esc | KeyCode::Char('q') | KeyCode::Char('v') => app.exit_visual_mode(),
+
+        // Navigation (extends selection)
+        KeyCode::Char('u') if key.modifiers.contains(KeyModifiers::CONTROL) => app.half_page_up(),
+        KeyCode::Char('d') if key.modifiers.contains(KeyModifiers::CONTROL) => app.half_page_down(),
+        KeyCode::Up | KeyCode::Char('k') => app.move_up(),
+        KeyCode::Down | KeyCode::Char('j') => app.move_down(),
+        KeyCode::PageUp => app.page_up(),
+        KeyCode::PageDown => app.page_down(),
+        KeyCode::Home | KeyCode::Char('g') => app.home(),
+        KeyCode::End | KeyCode::Char('G') => app.end(),
+
+        // Mark all selected for compare
+        KeyCode::Char('m') => app.mark_selected_for_compare(),
+
+        // Compare first and last in visual selection
+        KeyCode::Char('c') => app.visual_compare(),
+
+        _ => {}
+    }
+}
+
+fn handle_select_mode(app: &mut App, key: KeyEvent) {
+    match key.code {
+        // Exit select mode
+        KeyCode::Esc | KeyCode::Char('q') => app.exit_select_mode(),
+
+        // Column navigation
+        KeyCode::Left | KeyCode::Char('h') => app.select_column_left(),
+        KeyCode::Right | KeyCode::Char('l') => app.select_column_right(),
+
+        // Activate filter for current column
+        KeyCode::Enter | KeyCode::Char(' ') => app.activate_select_column_filter(),
+
+        // Row navigation (still works in select mode)
+        KeyCode::Up | KeyCode::Char('k') => app.move_up(),
+        KeyCode::Down | KeyCode::Char('j') => app.move_down(),
 
         _ => {}
     }
@@ -199,6 +262,51 @@ fn handle_download_provider_popup_mode(app: &mut App, key: KeyEvent) {
         KeyCode::Up | KeyCode::Char('k') => app.download_provider_popup_up(),
         KeyCode::Down | KeyCode::Char('j') => app.download_provider_popup_down(),
         KeyCode::Enter | KeyCode::Char(' ') => app.confirm_download_provider_selection(),
+        _ => {}
+    }
+}
+
+fn handle_quant_popup_mode(app: &mut App, key: KeyEvent) {
+    match key.code {
+        KeyCode::Esc | KeyCode::Char('q') => app.close_quant_popup(),
+
+        KeyCode::Up | KeyCode::Char('k') => app.quant_popup_up(),
+        KeyCode::Down | KeyCode::Char('j') => app.quant_popup_down(),
+
+        KeyCode::Char(' ') | KeyCode::Enter => app.quant_popup_toggle(),
+
+        KeyCode::Char('a') => app.quant_popup_select_all(),
+
+        _ => {}
+    }
+}
+
+fn handle_run_mode_popup_mode(app: &mut App, key: KeyEvent) {
+    match key.code {
+        KeyCode::Esc | KeyCode::Char('q') => app.close_run_mode_popup(),
+
+        KeyCode::Up | KeyCode::Char('k') => app.run_mode_popup_up(),
+        KeyCode::Down | KeyCode::Char('j') => app.run_mode_popup_down(),
+
+        KeyCode::Char(' ') | KeyCode::Enter => app.run_mode_popup_toggle(),
+
+        KeyCode::Char('a') => app.run_mode_popup_select_all(),
+
+        _ => {}
+    }
+}
+
+fn handle_params_bucket_popup_mode(app: &mut App, key: KeyEvent) {
+    match key.code {
+        KeyCode::Esc | KeyCode::Char('q') => app.close_params_bucket_popup(),
+
+        KeyCode::Up | KeyCode::Char('k') => app.params_bucket_popup_up(),
+        KeyCode::Down | KeyCode::Char('j') => app.params_bucket_popup_down(),
+
+        KeyCode::Char(' ') | KeyCode::Enter => app.params_bucket_popup_toggle(),
+
+        KeyCode::Char('a') => app.params_bucket_popup_select_all(),
+
         _ => {}
     }
 }

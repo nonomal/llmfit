@@ -3,7 +3,8 @@ use llmfit_core::hardware::SystemSpecs;
 use llmfit_core::models::{Capability, ModelDatabase, UseCase};
 use llmfit_core::plan::{PlanEstimate, PlanRequest, estimate_model_plan};
 use llmfit_core::providers::{
-    self, LlamaCppProvider, MlxProvider, ModelProvider, OllamaProvider, PullEvent, PullHandle,
+    self, DockerModelRunnerProvider, LlamaCppProvider, MlxProvider, ModelProvider, OllamaProvider,
+    PullEvent, PullHandle,
 };
 
 use std::collections::{HashMap, HashSet};
@@ -14,12 +15,17 @@ use crate::theme::Theme;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum InputMode {
     Normal,
+    Visual,
+    Select,
     Search,
     Plan,
     ProviderPopup,
     UseCasePopup,
     CapabilityPopup,
     DownloadProviderPopup,
+    QuantPopup,
+    RunModePopup,
+    ParamsBucketPopup,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -111,22 +117,26 @@ impl AvailabilityFilter {
 pub enum DownloadProvider {
     Ollama,
     LlamaCpp,
+    DockerModelRunner,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DownloadCapability {
     Unknown,
-    None,
-    Ollama,
-    LlamaCpp,
-    Both,
+    /// Bitfield: OLLAMA=1, LLAMACPP=2, DOCKER=4
+    Known(u8),
 }
+
+pub const DL_OLLAMA: u8 = 0b0001;
+pub const DL_LLAMACPP: u8 = 0b0010;
+pub const DL_DOCKER: u8 = 0b0100;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum ActivePullProvider {
     Ollama,
     Mlx,
     LlamaCpp,
+    DockerModelRunner,
 }
 
 impl ActivePullProvider {
@@ -135,6 +145,7 @@ impl ActivePullProvider {
             ActivePullProvider::Ollama => "Ollama",
             ActivePullProvider::Mlx => "MLX",
             ActivePullProvider::LlamaCpp => "llama.cpp",
+            ActivePullProvider::DockerModelRunner => "Docker",
         }
     }
 }
@@ -161,6 +172,7 @@ pub struct App {
     pub availability_filter: AvailabilityFilter,
     pub installed_first: bool,
     pub sort_column: SortColumn,
+    pub sort_ascending: bool,
 
     // Table state
     pub selected_row: usize,
@@ -169,6 +181,9 @@ pub struct App {
     pub show_detail: bool,
     pub show_compare: bool,
     pub compare_mark_model: Option<String>,
+    pub show_multi_compare: bool,
+    pub compare_models: Vec<usize>, // indices into all_fits
+    pub compare_scroll: usize,      // horizontal scroll for multi-compare
     pub show_plan: bool,
     plan_model_idx: Option<usize>,
     pub plan_field: PlanField,
@@ -191,13 +206,19 @@ pub struct App {
     pub ollama_available: bool,
     pub ollama_binary_available: bool,
     pub ollama_installed: HashSet<String>,
+    pub ollama_installed_count: usize,
     ollama: OllamaProvider,
     pub mlx_available: bool,
     pub mlx_installed: HashSet<String>,
     mlx: MlxProvider,
     pub llamacpp_available: bool,
     pub llamacpp_installed: HashSet<String>,
+    pub llamacpp_installed_count: usize,
     llamacpp: LlamaCppProvider,
+    pub docker_mr_available: bool,
+    pub docker_mr_installed: HashSet<String>,
+    pub docker_mr_installed_count: usize,
+    docker_mr: DockerModelRunnerProvider,
 
     // Download state
     pub pull_active: Option<PullHandle>,
@@ -214,6 +235,27 @@ pub struct App {
     /// When true, the next 'd' press will confirm and start the download.
     pub confirm_download: bool,
 
+    // Visual mode
+    pub visual_anchor: Option<usize>,
+
+    // Select mode
+    pub select_column: usize,
+
+    // Quant filter (popup)
+    pub quants: Vec<String>,
+    pub selected_quants: Vec<bool>,
+    pub quant_cursor: usize,
+
+    // RunMode filter (popup)
+    pub run_modes: Vec<String>,
+    pub selected_run_modes: Vec<bool>,
+    pub run_mode_cursor: usize,
+
+    // Params bucket filter (popup)
+    pub params_buckets: Vec<String>,
+    pub selected_params_buckets: Vec<bool>,
+    pub params_bucket_cursor: usize,
+
     // Theme
     pub theme: Theme,
 
@@ -229,7 +271,8 @@ impl App {
 
         // Detect Ollama
         let ollama = OllamaProvider::new();
-        let (ollama_available, ollama_installed) = ollama.detect_with_installed();
+        let (ollama_available, ollama_installed, ollama_installed_count) =
+            ollama.detect_with_installed();
         let ollama_binary_available = command_exists("ollama");
 
         // Detect MLX
@@ -239,7 +282,12 @@ impl App {
         // Detect llama.cpp
         let llamacpp = LlamaCppProvider::new();
         let llamacpp_available = llamacpp.is_available();
-        let llamacpp_installed = llamacpp.installed_models();
+        let (llamacpp_installed, llamacpp_installed_count) = llamacpp.installed_models_counted();
+
+        // Detect Docker Model Runner
+        let docker_mr = DockerModelRunnerProvider::new();
+        let (docker_mr_available, docker_mr_installed, docker_mr_installed_count) =
+            docker_mr.detect_with_installed();
 
         // Track how many we're skipping so the UI can surface it.
         let backend_hidden_count = db
@@ -257,7 +305,8 @@ impl App {
                 let mut fit = ModelFit::analyze_with_context_limit(m, &specs, context_limit);
                 fit.installed = providers::is_model_installed(&m.name, &ollama_installed)
                     || providers::is_model_installed_mlx(&m.name, &mlx_installed)
-                    || providers::is_model_installed_llamacpp(&m.name, &llamacpp_installed);
+                    || providers::is_model_installed_llamacpp(&m.name, &llamacpp_installed)
+                    || providers::is_model_installed_docker_mr(&m.name, &docker_mr_installed);
                 fit
             })
             .collect();
@@ -291,6 +340,36 @@ impl App {
         let model_capabilities = Capability::all().to_vec();
         let selected_capabilities = vec![true; model_capabilities.len()];
 
+        // Extract unique quantizations
+        let mut model_quants: Vec<String> = all_fits
+            .iter()
+            .map(|f| f.best_quant.clone())
+            .collect::<std::collections::BTreeSet<_>>()
+            .into_iter()
+            .collect();
+        model_quants.sort();
+        let selected_quants = vec![true; model_quants.len()];
+
+        // Run modes
+        let model_run_modes = vec![
+            "GPU".to_string(),
+            "MoE".to_string(),
+            "CPU+GPU".to_string(),
+            "CPU".to_string(),
+        ];
+        let selected_run_modes = vec![true; model_run_modes.len()];
+
+        // Params buckets
+        let params_buckets = vec![
+            "<3B".to_string(),
+            "3-7B".to_string(),
+            "7-14B".to_string(),
+            "14-30B".to_string(),
+            "30-70B".to_string(),
+            "70B+".to_string(),
+        ];
+        let selected_params_buckets = vec![true; params_buckets.len()];
+
         let filtered_count = all_fits.len();
 
         let (download_capability_tx, download_capability_rx) = mpsc::channel();
@@ -313,10 +392,14 @@ impl App {
             availability_filter: AvailabilityFilter::All,
             installed_first: false,
             sort_column: SortColumn::Score,
+            sort_ascending: false,
             selected_row: 0,
             show_detail: false,
             show_compare: false,
             compare_mark_model: None,
+            show_multi_compare: false,
+            compare_models: Vec::new(),
+            compare_scroll: 0,
             show_plan: false,
             plan_model_idx: None,
             plan_field: PlanField::Context,
@@ -335,13 +418,19 @@ impl App {
             ollama_available,
             ollama_binary_available,
             ollama_installed,
+            ollama_installed_count,
             ollama,
             mlx_available,
             mlx_installed,
             mlx,
             llamacpp_available,
             llamacpp_installed,
+            llamacpp_installed_count,
             llamacpp,
+            docker_mr_available,
+            docker_mr_installed,
+            docker_mr_installed_count,
+            docker_mr,
             pull_active: None,
             pull_status: None,
             pull_percent: None,
@@ -353,6 +442,17 @@ impl App {
             download_capability_rx,
             tick_count: 0,
             confirm_download: false,
+            visual_anchor: None,
+            select_column: 2, // start on Model column
+            quants: model_quants,
+            selected_quants,
+            quant_cursor: 0,
+            run_modes: model_run_modes,
+            selected_run_modes,
+            run_mode_cursor: 0,
+            params_buckets,
+            selected_params_buckets,
+            params_bucket_cursor: 0,
             theme: Theme::load(),
             backend_hidden_count,
         };
@@ -446,12 +546,69 @@ impl App {
                     }
                 };
 
+                // Quant filter
+                let matches_quant = {
+                    let all_selected = self.selected_quants.iter().all(|&s| s);
+                    if all_selected {
+                        true
+                    } else {
+                        self.quants
+                            .iter()
+                            .zip(self.selected_quants.iter())
+                            .any(|(q, &sel)| sel && *q == fit.best_quant)
+                    }
+                };
+
+                // RunMode filter
+                let matches_run_mode = {
+                    let all_selected = self.selected_run_modes.iter().all(|&s| s);
+                    if all_selected {
+                        true
+                    } else {
+                        let mode_text = fit.run_mode_text();
+                        self.run_modes
+                            .iter()
+                            .zip(self.selected_run_modes.iter())
+                            .any(|(m, &sel)| sel && *m == mode_text)
+                    }
+                };
+
+                // Params bucket filter
+                let matches_params_bucket = {
+                    let all_selected = self.selected_params_buckets.iter().all(|&s| s);
+                    if all_selected {
+                        true
+                    } else {
+                        let params = fit.model.params_b();
+                        let bucket_idx = if params < 3.0 {
+                            0
+                        } else if params < 7.0 {
+                            1
+                        } else if params < 14.0 {
+                            2
+                        } else if params < 30.0 {
+                            3
+                        } else if params < 70.0 {
+                            4
+                        } else {
+                            5
+                        };
+                        self.selected_params_buckets
+                            .get(bucket_idx)
+                            .copied()
+                            .unwrap_or(true)
+                    }
+                };
+
                 matches_search
                     && matches_provider
                     && matches_use_case
                     && matches_fit
                     && matches_availability
                     && matches_capability
+                    && matches_quant
+                    && matches_run_mode
+                    && matches_params_bucket
             })
             .map(|(i, _)| i)
             .collect();
@@ -537,6 +694,7 @@ impl App {
 
     pub fn cycle_sort_column(&mut self) {
         self.sort_column = self.sort_column.next();
+        self.sort_ascending = false;
         self.re_sort();
     }
 
@@ -916,6 +1074,242 @@ impl App {
         self.apply_filters();
     }
 
+    // ── Visual mode ──────────────────────────────────────────────
+
+    pub fn enter_visual_mode(&mut self) {
+        self.visual_anchor = Some(self.selected_row);
+        self.input_mode = InputMode::Visual;
+    }
+
+    pub fn exit_visual_mode(&mut self) {
+        self.visual_anchor = None;
+        self.input_mode = InputMode::Normal;
+    }
+
+    pub fn visual_range(&self) -> Option<std::ops::RangeInclusive<usize>> {
+        let anchor = self.visual_anchor?;
+        let lo = anchor.min(self.selected_row);
+        let hi = anchor.max(self.selected_row);
+        Some(lo..=hi)
+    }
+
+    pub fn visual_selection_count(&self) -> usize {
+        self.visual_range()
+            .map(|r| r.end() - r.start() + 1)
+            .unwrap_or(0)
+    }
+
+    /// In visual mode, compare all selected models.
+    pub fn visual_compare(&mut self) {
+        let Some(range) = self.visual_range() else {
+            return;
+        };
+        let lo = *range.start();
+        let hi = *range.end();
+        if lo == hi {
+            self.pull_status = Some("Select at least 2 models to compare".to_string());
+            return;
+        }
+        // Collect all filtered_fits indices in the visual range
+        self.compare_models = (lo..=hi)
+            .filter_map(|row| self.filtered_fits.get(row).copied())
+            .collect();
+        self.compare_scroll = 0;
+        self.exit_visual_mode();
+        self.show_detail = false;
+        self.show_plan = false;
+        self.show_compare = false;
+        self.show_multi_compare = true;
+    }
+
+    pub fn close_multi_compare(&mut self) {
+        self.show_multi_compare = false;
+        self.compare_models.clear();
+    }
+
+    pub fn multi_compare_scroll_left(&mut self) {
+        if self.compare_scroll > 0 {
+            self.compare_scroll -= 1;
+        }
+    }
+
+    pub fn multi_compare_scroll_right(&mut self) {
+        if !self.compare_models.is_empty()
+            && self.compare_scroll < self.compare_models.len().saturating_sub(1)
+        {
+            self.compare_scroll += 1;
+        }
+    }
+
+    // ── Select mode ─────────────────────────────────────────────
+
+    pub fn enter_select_mode(&mut self) {
+        self.input_mode = InputMode::Select;
+    }
+
+    pub fn exit_select_mode(&mut self) {
+        self.input_mode = InputMode::Normal;
+    }
+
+    pub fn select_column_left(&mut self) {
+        if self.select_column > 1 {
+            self.select_column -= 1;
+        }
+    }
+
+    pub fn select_column_right(&mut self) {
+        if self.select_column < 13 {
+            self.select_column += 1;
+        }
+    }
+
+    /// Activate the filter for the currently focused column in Select mode.
+    pub fn activate_select_column_filter(&mut self) {
+        match self.select_column {
+            1 => self.cycle_availability_filter(), // Inst
+            2 => {
+                self.input_mode = InputMode::Search;
+            } // Model → search
+            3 => {
+                self.input_mode = InputMode::ProviderPopup;
+            } // Provider
+            4 => {
+                self.input_mode = InputMode::ParamsBucketPopup;
+            } // Params
+            5 => self.set_or_toggle_sort(SortColumn::Score), // Score
+            6 => self.set_or_toggle_sort(SortColumn::Tps), // tok/s
+            7 => {
+                self.input_mode = InputMode::QuantPopup;
+            } // Quant
+            8 => {
+                self.input_mode = InputMode::RunModePopup;
+            } // Mode
+            9 => self.set_or_toggle_sort(SortColumn::MemPct), // Mem%
+            10 => self.set_or_toggle_sort(SortColumn::Ctx), // Ctx
+            11 => self.set_or_toggle_sort(SortColumn::ReleaseDate), // Date
+            12 => self.cycle_fit_filter(),         // Fit
+            13 => {
+                self.input_mode = InputMode::UseCasePopup;
+            } // Use Case
+            _ => {}
+        }
+    }
+
+    /// Set sort column, or toggle ascending/descending if already on that column.
+    fn set_or_toggle_sort(&mut self, col: SortColumn) {
+        if self.sort_column == col {
+            self.sort_ascending = !self.sort_ascending;
+        } else {
+            self.sort_column = col;
+            self.sort_ascending = false;
+        }
+        self.re_sort();
+    }
+
+    // ── Quant popup ─────────────────────────────────────────────
+
+    pub fn close_quant_popup(&mut self) {
+        self.input_mode = InputMode::Normal;
+    }
+
+    pub fn quant_popup_up(&mut self) {
+        if self.quant_cursor > 0 {
+            self.quant_cursor -= 1;
+        }
+    }
+
+    pub fn quant_popup_down(&mut self) {
+        if self.quant_cursor + 1 < self.quants.len() {
+            self.quant_cursor += 1;
+        }
+    }
+
+    pub fn quant_popup_toggle(&mut self) {
+        if self.quant_cursor < self.selected_quants.len() {
+            self.selected_quants[self.quant_cursor] = !self.selected_quants[self.quant_cursor];
+            self.apply_filters();
+        }
+    }
+
+    pub fn quant_popup_select_all(&mut self) {
+        let all_selected = self.selected_quants.iter().all(|&s| s);
+        let new_val = !all_selected;
+        for s in &mut self.selected_quants {
+            *s = new_val;
+        }
+        self.apply_filters();
+    }
+
+    // ── RunMode popup ───────────────────────────────────────────
+
+    pub fn close_run_mode_popup(&mut self) {
+        self.input_mode = InputMode::Normal;
+    }
+
+    pub fn run_mode_popup_up(&mut self) {
+        if self.run_mode_cursor > 0 {
+            self.run_mode_cursor -= 1;
+        }
+    }
+
+    pub fn run_mode_popup_down(&mut self) {
+        if self.run_mode_cursor + 1 < self.run_modes.len() {
+            self.run_mode_cursor += 1;
+        }
+    }
+
+    pub fn run_mode_popup_toggle(&mut self) {
+        if self.run_mode_cursor < self.selected_run_modes.len() {
+            self.selected_run_modes[self.run_mode_cursor] =
+                !self.selected_run_modes[self.run_mode_cursor];
+            self.apply_filters();
+        }
+    }
+
+    pub fn run_mode_popup_select_all(&mut self) {
+        let all_selected = self.selected_run_modes.iter().all(|&s| s);
+        let new_val = !all_selected;
+        for s in &mut self.selected_run_modes {
+            *s = new_val;
+        }
+        self.apply_filters();
+    }
+
+    // ── Params bucket popup ─────────────────────────────────────
+
+    pub fn close_params_bucket_popup(&mut self) {
+        self.input_mode = InputMode::Normal;
+    }
+
+    pub fn params_bucket_popup_up(&mut self) {
+        if self.params_bucket_cursor > 0 {
+            self.params_bucket_cursor -= 1;
+        }
+    }
+
+    pub fn params_bucket_popup_down(&mut self) {
+        if self.params_bucket_cursor + 1 < self.params_buckets.len() {
+            self.params_bucket_cursor += 1;
+        }
+    }
+
+    pub fn params_bucket_popup_toggle(&mut self) {
+        if self.params_bucket_cursor < self.selected_params_buckets.len() {
+            self.selected_params_buckets[self.params_bucket_cursor] =
+                !self.selected_params_buckets[self.params_bucket_cursor];
+            self.apply_filters();
+        }
+    }
+
+    pub fn params_bucket_popup_select_all(&mut self) {
+        let all_selected = self.selected_params_buckets.iter().all(|&s| s);
+        let new_val = !all_selected;
+        for s in &mut self.selected_params_buckets {
+            *s = new_val;
+        }
+        self.apply_filters();
+    }
+
     pub fn toggle_installed_first(&mut self) {
         self.installed_first = !self.installed_first;
         self.re_sort();
@@ -924,19 +1318,27 @@ impl App {
     /// Re-sort all_fits using current sort column and installed_first preference, then refilter.
     fn re_sort(&mut self) {
         let fits = std::mem::take(&mut self.all_fits);
-        self.all_fits = llmfit_core::fit::rank_models_by_fit_opts_col(
+        let mut sorted = llmfit_core::fit::rank_models_by_fit_opts_col(
             fits,
             self.installed_first,
             self.sort_column,
         );
+        if self.sort_ascending {
+            sorted.reverse();
+        }
+        self.all_fits = sorted;
         self.apply_filters();
     }
 
     /// Start pulling the currently selected model via the best available provider.
     pub fn start_download(&mut self) {
-        let any_available = self.ollama_available || self.mlx_available || self.llamacpp_available;
+        let any_available = self.ollama_available
+            || self.mlx_available
+            || self.llamacpp_available
+            || self.docker_mr_available;
         if !any_available {
-            self.pull_status = Some("No provider available (Ollama/MLX/llama.cpp)".to_string());
+            self.pull_status =
+                Some("No provider available (Ollama/MLX/llama.cpp/Docker)".to_string());
             return;
         }
         if self.pull_active.is_some() {
@@ -950,6 +1352,7 @@ impl App {
             return;
         }
         let model_name = fit.model.name.clone();
+        let has_catalog_gguf = !fit.model.gguf_sources.is_empty();
 
         // Choose provider based on runtime
         let use_mlx = fit.runtime == llmfit_core::fit::InferenceRuntime::Mlx && self.mlx_available;
@@ -959,11 +1362,20 @@ impl App {
             return;
         }
 
-        let download_options = self.available_download_providers(&model_name);
+        let download_options = self.available_download_providers(&model_name, has_catalog_gguf);
         if !download_options.is_empty() {
             self.open_download_provider_popup(model_name, download_options);
         } else {
-            self.pull_status = Some("No compatible provider available for this model".to_string());
+            let any_runtime = self.ollama_available
+                || self.ollama_binary_available
+                || self.llamacpp_available
+                || self.mlx_available
+                || self.docker_mr_available;
+            self.pull_status = Some(if any_runtime {
+                "No downloadable format found for this model".to_string()
+            } else {
+                "No compatible runtime available — install Ollama, llama.cpp, or Docker".to_string()
+            });
         }
     }
 
@@ -992,6 +1404,7 @@ impl App {
         match provider {
             DownloadProvider::Ollama => self.start_ollama_download(model_name),
             DownloadProvider::LlamaCpp => self.start_llamacpp_download_for_model(model_name),
+            DownloadProvider::DockerModelRunner => self.start_docker_mr_download(model_name),
         }
     }
 
@@ -1016,7 +1429,15 @@ impl App {
 
     /// Start downloading a GGUF model via the llama.cpp provider.
     fn start_llamacpp_download_for_model(&mut self, model_name: String) {
-        let Some(repo) = providers::first_existing_gguf_repo(&model_name) else {
+        // Check catalog gguf_sources first (instant), then fall back to HTTP probe
+        let catalog_repo = self
+            .all_fits
+            .iter()
+            .find(|f| f.model.name == model_name)
+            .and_then(|f| f.model.gguf_sources.first())
+            .map(|s| s.repo.clone());
+        let Some(repo) = catalog_repo.or_else(|| providers::first_existing_gguf_repo(&model_name))
+        else {
             self.pull_status = Some("No GGUF repo found in remote registry".to_string());
             return;
         };
@@ -1031,6 +1452,25 @@ impl App {
             }
             Err(e) => {
                 self.pull_status = Some(format!("GGUF download failed: {}", e));
+            }
+        }
+    }
+
+    fn start_docker_mr_download(&mut self, model_name: String) {
+        let Some(docker_tag) = providers::docker_mr_pull_tag(&model_name) else {
+            self.pull_status = Some("Not available for Docker Model Runner".to_string());
+            return;
+        };
+        match self.docker_mr.start_pull(&docker_tag) {
+            Ok(handle) => {
+                self.pull_model_name = Some(model_name);
+                self.pull_status = Some(format!("Pulling {} via Docker...", docker_tag));
+                self.pull_percent = None;
+                self.pull_provider = Some(ActivePullProvider::DockerModelRunner);
+                self.pull_active = Some(handle);
+            }
+            Err(e) => {
+                self.pull_status = Some(format!("Docker pull failed: {}", e));
             }
         }
     }
@@ -1088,15 +1528,26 @@ impl App {
         }
     }
 
-    fn available_download_providers(&self, model_name: &str) -> Vec<DownloadProvider> {
+    fn available_download_providers(
+        &self,
+        model_name: &str,
+        has_catalog_gguf: bool,
+    ) -> Vec<DownloadProvider> {
         let mut providers_for_model = Vec::new();
         if providers::has_ollama_mapping(model_name)
             && (self.ollama_available || self.ollama_binary_available)
         {
             providers_for_model.push(DownloadProvider::Ollama);
         }
-        if self.llamacpp_available && providers::first_existing_gguf_repo(model_name).is_some() {
+        // Check catalog gguf_sources first (no HTTP probe needed), then
+        // fall back to the heuristic repo lookup
+        if self.llamacpp_available
+            && (has_catalog_gguf || providers::first_existing_gguf_repo(model_name).is_some())
+        {
             providers_for_model.push(DownloadProvider::LlamaCpp);
+        }
+        if self.docker_mr_available && providers::has_docker_mr_mapping(model_name) {
+            providers_for_model.push(DownloadProvider::DockerModelRunner);
         }
         providers_for_model
     }
@@ -1106,7 +1557,7 @@ impl App {
         self.download_provider_options = options;
         self.download_provider_cursor = 0;
         self.input_mode = InputMode::DownloadProviderPopup;
-        self.pull_status = Some("Choose download provider and press Enter".to_string());
+        self.pull_status = Some("Choose download runtime and press Enter".to_string());
     }
 
     pub fn close_download_provider_popup(&mut self) {
@@ -1152,15 +1603,26 @@ impl App {
 
     /// Re-query all providers for installed models and update all_fits.
     pub fn refresh_installed(&mut self) {
-        self.ollama_installed = self.ollama.installed_models();
+        let (ollama_set, ollama_count) = self.ollama.installed_models_counted();
+        self.ollama_installed = ollama_set;
+        self.ollama_installed_count = ollama_count;
         self.mlx_installed = self.mlx.installed_models();
-        self.llamacpp_installed = self.llamacpp.installed_models();
+        let (llamacpp_set, llamacpp_count) = self.llamacpp.installed_models_counted();
+        self.llamacpp_installed = llamacpp_set;
+        self.llamacpp_installed_count = llamacpp_count;
+        let (docker_mr_set, docker_mr_count) = self.docker_mr.installed_models_counted();
+        self.docker_mr_installed = docker_mr_set;
+        self.docker_mr_installed_count = docker_mr_count;
         for fit in &mut self.all_fits {
             fit.installed = providers::is_model_installed(&fit.model.name, &self.ollama_installed)
                 || providers::is_model_installed_mlx(&fit.model.name, &self.mlx_installed)
                 || providers::is_model_installed_llamacpp(
                     &fit.model.name,
                     &self.llamacpp_installed,
+                )
+                || providers::is_model_installed_docker_mr(
+                    &fit.model.name,
+                    &self.docker_mr_installed,
                 );
         }
         self.re_sort();
@@ -1183,12 +1645,13 @@ impl App {
         for idx in start..end {
             if let Some(&fit_idx) = self.filtered_fits.get(idx) {
                 let model_name = self.all_fits[fit_idx].model.name.clone();
-                self.enqueue_capability_probe(model_name);
+                let has_catalog_gguf = !self.all_fits[fit_idx].model.gguf_sources.is_empty();
+                self.enqueue_capability_probe(model_name, has_catalog_gguf);
             }
         }
     }
 
-    fn enqueue_capability_probe(&mut self, model_name: String) {
+    fn enqueue_capability_probe(&mut self, model_name: String, has_catalog_gguf: bool) {
         if self.download_capabilities.contains_key(&model_name)
             || self.download_capability_inflight.contains(&model_name)
             || self.download_capability_inflight.len() >= 12
@@ -1200,20 +1663,28 @@ impl App {
         let tx = self.download_capability_tx.clone();
         let ollama_runtime_available = self.ollama_available || self.ollama_binary_available;
         let llamacpp_available = self.llamacpp_available;
+        let docker_mr_available = self.docker_mr_available;
         std::thread::spawn(move || {
             let has_ollama = ollama_runtime_available && providers::has_ollama_mapping(&model_name);
-            let mut has_llamacpp = false;
-            if llamacpp_available {
-                has_llamacpp = providers::first_existing_gguf_repo(&model_name).is_some();
-            }
-
-            let capability = match (has_ollama, has_llamacpp) {
-                (true, true) => DownloadCapability::Both,
-                (true, false) => DownloadCapability::Ollama,
-                (false, true) => DownloadCapability::LlamaCpp,
-                (false, false) => DownloadCapability::None,
+            let has_llamacpp = if llamacpp_available {
+                // Use catalog data when available to skip slow HTTP probes
+                has_catalog_gguf || providers::first_existing_gguf_repo(&model_name).is_some()
+            } else {
+                false
             };
-            let _ = tx.send((model_name, capability));
+            let has_docker = docker_mr_available && providers::has_docker_mr_mapping(&model_name);
+
+            let mut flags = 0u8;
+            if has_ollama {
+                flags |= DL_OLLAMA;
+            }
+            if has_llamacpp {
+                flags |= DL_LLAMACPP;
+            }
+            if has_docker {
+                flags |= DL_DOCKER;
+            }
+            let _ = tx.send((model_name, DownloadCapability::Known(flags)));
         });
     }
 

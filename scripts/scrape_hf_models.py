@@ -171,6 +171,38 @@ TARGET_MODELS = [
     "meituan/LongCat-Flash",
     # Ant Group Ling
     "inclusionAI/Ling-lite",
+    # Liquid AI LFM2 (dense)
+    "LiquidAI/LFM2-350M",
+    "LiquidAI/LFM2-700M",
+    "LiquidAI/LFM2-1.2B",
+    "LiquidAI/LFM2-2.6B",
+    "LiquidAI/LFM2-2.6B-Exp",
+    # Liquid AI LFM2 (MoE)
+    "LiquidAI/LFM2-8B-A1B",
+    "LiquidAI/LFM2-24B-A2B",
+    # Liquid AI LFM2.5
+    "LiquidAI/LFM2.5-1.2B-Base",
+    "LiquidAI/LFM2.5-1.2B-Instruct",
+    "LiquidAI/LFM2.5-1.2B-Thinking",
+    "LiquidAI/LFM2.5-1.2B-JP",
+    # Liquid AI LFM2 Vision-Language
+    "LiquidAI/LFM2-VL-450M",
+    "LiquidAI/LFM2-VL-1.6B",
+    "LiquidAI/LFM2-VL-3B",
+    "LiquidAI/LFM2.5-VL-1.6B",
+    # Liquid AI LFM2 Audio
+    "LiquidAI/LFM2-Audio-1.5B",
+    "LiquidAI/LFM2.5-Audio-1.5B",
+    # Liquid AI Liquid Nanos (task-specific fine-tunes)
+    "LiquidAI/LFM2-1.2B-Tool",
+    "LiquidAI/LFM2-1.2B-RAG",
+    "LiquidAI/LFM2-1.2B-Extract",
+    "LiquidAI/LFM2-350M-Extract",
+    "LiquidAI/LFM2-350M-Math",
+    "LiquidAI/LFM2-350M-ENJP-MT",
+    "LiquidAI/LFM2-350M-PII-Extract-JP",
+    "LiquidAI/LFM2-ColBERT-350M",
+    "LiquidAI/LFM2-2.6B-Transcript",
     # Embeddings (useful for RAG sizing)
     "nomic-ai/nomic-embed-text-v1.5",
     "BAAI/bge-large-en-v1.5",
@@ -216,6 +248,10 @@ QUANT_BPP = {
     "Q4_0":   0.5,
     "Q3_K_M": 0.4375,
     "Q2_K":   0.3125,
+    "AWQ-4bit": 0.5,
+    "AWQ-8bit": 1.0,
+    "GPTQ-Int4": 0.5,
+    "GPTQ-Int8": 1.0,
 }
 
 # Overhead multiplier for runtime memory beyond just model weights
@@ -263,6 +299,8 @@ MOE_ACTIVE_PARAMS = {
     "MiniMaxAI/MiniMax-M2.5": 10_000_000_000,
     "XiaomiMiMo/MiMo-V2-Flash": 15_000_000_000,
     "nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16": 3_000_000_000,
+    "LiquidAI/LFM2-8B-A1B": 1_500_000_000,
+    "LiquidAI/LFM2-24B-A2B": 2_300_000_000,  # 23.8B total, 2.3B active
 }
 
 
@@ -461,6 +499,7 @@ def extract_provider(repo_id: str) -> str:
         "lmsys": "LMSYS",  # NEW
         "nousresearch": "NousResearch",  # NEW
         "wizardlmteam": "WizardLM",  # NEW
+        "liquidai": "Liquid AI",
     }
     return mapping.get(org, org)
 
@@ -501,6 +540,73 @@ def infer_capabilities(repo_id: str, pipeline_tag: str | None, use_case: str) ->
     return caps
 
 
+def detect_quant_format(repo_id: str, config: dict | None) -> tuple[str, str]:
+    """Detect quantization format and label from config.json.
+
+    Returns (format, quant_label) where:
+    - format: "gguf", "awq", "gptq", "mlx", or "safetensors"
+    - quant_label: e.g. "AWQ-4bit", "GPTQ-Int4", "Q4_K_M"
+    """
+    if not config:
+        return _detect_format_from_name(repo_id)
+
+    quant_config = config.get("quantization_config", {})
+    if not quant_config:
+        return _detect_format_from_name(repo_id)
+
+    quant_method = quant_config.get("quant_method", "")
+    bits = quant_config.get("bits", quant_config.get("num_bits", 4))
+
+    # AWQ
+    if quant_method == "awq":
+        label = f"AWQ-{bits}bit"
+        return ("awq", label)
+
+    # GPTQ (including gptq_marlin)
+    if quant_method.startswith("gptq"):
+        label = f"GPTQ-Int{bits}"
+        return ("gptq", label)
+
+    # compressed-tensors: dig into config_groups for bits, check name for format
+    if quant_method == "compressed-tensors":
+        # Try to extract bits from config_groups
+        config_groups = quant_config.get("config_groups", {})
+        for group in config_groups.values():
+            if isinstance(group, dict):
+                weights = group.get("weights", {})
+                if "num_bits" in weights:
+                    bits = weights["num_bits"]
+                    break
+
+        name_upper = repo_id.upper()
+        if "-AWQ" in name_upper:
+            label = f"AWQ-{bits}bit"
+            return ("awq", label)
+        elif "-GPTQ" in name_upper:
+            label = f"GPTQ-Int{bits}"
+            return ("gptq", label)
+
+    return _detect_format_from_name(repo_id)
+
+
+def _detect_format_from_name(repo_id: str) -> tuple[str, str]:
+    """Fallback: detect format from model name patterns."""
+    name_upper = repo_id.upper()
+
+    if "-AWQ-8BIT" in name_upper:
+        return ("awq", "AWQ-8bit")
+    if "-AWQ" in name_upper:
+        return ("awq", "AWQ-4bit")
+    if "-GPTQ-INT8" in name_upper or "-GPTQ-8BIT" in name_upper:
+        return ("gptq", "GPTQ-Int8")
+    if "-GPTQ" in name_upper:
+        return ("gptq", "GPTQ-Int4")
+    if "-MLX-" in name_upper or name_upper.endswith("-MLX"):
+        return ("mlx", "Q4_K_M")  # MLX uses its own quant scheme handled elsewhere
+
+    return ("gguf", "Q4_K_M")
+
+
 def scrape_model(repo_id: str) -> dict | None:
     """Scrape a single model and return an LlmModel-compatible dict."""
     info = fetch_model_info(repo_id)
@@ -521,10 +627,12 @@ def scrape_model(repo_id: str) -> dict | None:
 
     config = info.get("config", {})
     pipeline_tag = info.get("pipeline_tag")
-    default_quant = "Q4_K_M"
 
     # Fetch full config.json for accurate context length
     full_config = fetch_config_json(repo_id)
+
+    # Detect quantization format from config.json
+    model_format, default_quant = detect_quant_format(repo_id, full_config)
     context_length = infer_context_length(full_config) if full_config else infer_context_length(config)
 
     min_ram, rec_ram = estimate_ram(total_params, default_quant)
@@ -546,6 +654,7 @@ def scrape_model(repo_id: str) -> dict | None:
         "recommended_ram_gb": rec_ram,
         "min_vram_gb": min_vram,
         "quantization": default_quant,
+        "format": model_format,
         "context_length": context_length,
         "use_case": use_case_str,
         "capabilities": infer_capabilities(repo_id, pipeline_tag, use_case_str),
@@ -571,7 +680,7 @@ def scrape_model(repo_id: str) -> dict | None:
 # ---------------------------------------------------------------------------
 
 # Providers known to publish high-quality GGUF quantizations
-GGUF_PROVIDERS = ["unsloth", "bartowski"]
+GGUF_PROVIDERS = ["unsloth", "bartowski", "ggml-org", "TheBloke", "mradermacher"]
 
 GGUF_CACHE_FILE = os.path.join(os.path.dirname(__file__), "..", "data", "gguf_sources_cache.json")
 GGUF_CACHE_MAX_AGE_DAYS = 7  # Re-check repos older than this
@@ -648,6 +757,10 @@ def enrich_gguf_sources(models: list[dict]) -> int:
 
     for i, model in enumerate(models, 1):
         repo_id = model["name"]
+
+        # Skip non-GGUF models (AWQ/GPTQ don't use GGUF sources)
+        if model.get("format", "gguf") != "gguf":
+            continue
 
         # Check cache first
         if repo_id in cache and _cache_entry_fresh(cache[repo_id]):
@@ -1490,6 +1603,276 @@ def main():
             "hf_downloads": 0, "hf_likes": 0, "release_date": None,
             "is_moe": True, "num_experts": 256, "active_experts": 8,
             "active_parameters": 17_000_000_000,
+        },
+        # Liquid AI LFM2 dense models
+        {
+            "name": "LiquidAI/LFM2-350M",
+            "provider": "Liquid AI", "parameter_count": "354M",
+            "parameters_raw": 354483968,
+            "min_ram_gb": 1.0, "recommended_ram_gb": 2.0, "min_vram_gb": 0.5,
+            "quantization": "Q4_K_M", "context_length": 128000,
+            "use_case": "Lightweight, edge deployment",
+            "pipeline_tag": "text-generation", "architecture": "lfm2",
+            "hf_downloads": 0, "hf_likes": 0, "release_date": "2025-11-28",
+        },
+        {
+            "name": "LiquidAI/LFM2-700M",
+            "provider": "Liquid AI", "parameter_count": "742M",
+            "parameters_raw": 742489344,
+            "min_ram_gb": 1.0, "recommended_ram_gb": 2.0, "min_vram_gb": 0.5,
+            "quantization": "Q4_K_M", "context_length": 128000,
+            "use_case": "Lightweight, edge deployment",
+            "pipeline_tag": "text-generation", "architecture": "lfm2",
+            "hf_downloads": 0, "hf_likes": 0, "release_date": "2025-11-28",
+        },
+        {
+            "name": "LiquidAI/LFM2-1.2B",
+            "provider": "Liquid AI", "parameter_count": "1.2B",
+            "parameters_raw": 1170340608,
+            "min_ram_gb": 1.0, "recommended_ram_gb": 2.0, "min_vram_gb": 0.6,
+            "quantization": "Q4_K_M", "context_length": 128000,
+            "use_case": "General purpose text generation",
+            "pipeline_tag": "text-generation", "architecture": "lfm2",
+            "hf_downloads": 0, "hf_likes": 0, "release_date": "2025-11-28",
+        },
+        {
+            "name": "LiquidAI/LFM2-2.6B",
+            "provider": "Liquid AI", "parameter_count": "2.6B",
+            "parameters_raw": 2569272320,
+            "min_ram_gb": 1.4, "recommended_ram_gb": 2.4, "min_vram_gb": 1.3,
+            "quantization": "Q4_K_M", "context_length": 128000,
+            "use_case": "General purpose text generation",
+            "pipeline_tag": "text-generation", "architecture": "lfm2",
+            "hf_downloads": 0, "hf_likes": 0, "release_date": "2025-11-28",
+        },
+        {
+            "name": "LiquidAI/LFM2-2.6B-Exp",
+            "provider": "Liquid AI", "parameter_count": "2.6B",
+            "parameters_raw": 2569272320,
+            "min_ram_gb": 1.4, "recommended_ram_gb": 2.4, "min_vram_gb": 1.3,
+            "quantization": "Q4_K_M", "context_length": 128000,
+            "use_case": "Instruction following, math, knowledge",
+            "pipeline_tag": "text-generation", "architecture": "lfm2",
+            "hf_downloads": 0, "hf_likes": 0, "release_date": "2025-11-28",
+        },
+        # Liquid AI LFM2 MoE models
+        {
+            "name": "LiquidAI/LFM2-8B-A1B",
+            "provider": "Liquid AI", "parameter_count": "8.3B",
+            "parameters_raw": 8300000000,
+            "min_ram_gb": 4.6, "recommended_ram_gb": 7.7, "min_vram_gb": 4.3,
+            "quantization": "Q4_K_M", "context_length": 128000,
+            "use_case": "General purpose, edge MoE",
+            "pipeline_tag": "text-generation", "architecture": "lfm2",
+            "is_moe": True, "num_experts": 32, "active_experts": 4,
+            "active_parameters": 1500000000,
+            "hf_downloads": 0, "hf_likes": 0, "release_date": "2025-11-28",
+        },
+        {
+            "name": "LiquidAI/LFM2-24B-A2B",
+            "provider": "Liquid AI", "parameter_count": "23.8B",
+            "parameters_raw": 23_843_661_440,
+            "min_ram_gb": 13.3, "recommended_ram_gb": 22.2, "min_vram_gb": 12.2,
+            "quantization": "Q4_K_M", "context_length": 128000,
+            "use_case": "Agentic tasks, RAG, summarization",
+            "pipeline_tag": "text-generation", "architecture": "lfm2",
+            "is_moe": True, "num_experts": 32, "active_experts": 4,
+            "active_parameters": 2300000000,
+            "hf_downloads": 0, "hf_likes": 0, "release_date": "2025-11-28",
+        },
+        # Liquid AI LFM2.5 models
+        {
+            "name": "LiquidAI/LFM2.5-1.2B-Base",
+            "provider": "Liquid AI", "parameter_count": "1.2B",
+            "parameters_raw": 1170340608,
+            "min_ram_gb": 1.0, "recommended_ram_gb": 2.0, "min_vram_gb": 0.6,
+            "quantization": "Q4_K_M", "context_length": 128000,
+            "use_case": "General purpose text generation",
+            "pipeline_tag": "text-generation", "architecture": "lfm2",
+            "hf_downloads": 0, "hf_likes": 0, "release_date": "2025-11-28",
+        },
+        {
+            "name": "LiquidAI/LFM2.5-1.2B-Instruct",
+            "provider": "Liquid AI", "parameter_count": "1.2B",
+            "parameters_raw": 1170340608,
+            "min_ram_gb": 1.0, "recommended_ram_gb": 2.0, "min_vram_gb": 0.6,
+            "quantization": "Q4_K_M", "context_length": 128000,
+            "use_case": "Instruction following, chat",
+            "pipeline_tag": "text-generation", "architecture": "lfm2",
+            "hf_downloads": 0, "hf_likes": 0, "release_date": "2025-11-28",
+        },
+        {
+            "name": "LiquidAI/LFM2.5-1.2B-Thinking",
+            "provider": "Liquid AI", "parameter_count": "1.2B",
+            "parameters_raw": 1170340608,
+            "min_ram_gb": 1.0, "recommended_ram_gb": 2.0, "min_vram_gb": 0.6,
+            "quantization": "Q4_K_M", "context_length": 128000,
+            "use_case": "Advanced reasoning, chain-of-thought",
+            "pipeline_tag": "text-generation", "architecture": "lfm2",
+            "hf_downloads": 0, "hf_likes": 0, "release_date": "2025-11-28",
+        },
+        {
+            "name": "LiquidAI/LFM2.5-1.2B-JP",
+            "provider": "Liquid AI", "parameter_count": "1.2B",
+            "parameters_raw": 1170340608,
+            "min_ram_gb": 1.0, "recommended_ram_gb": 2.0, "min_vram_gb": 0.6,
+            "quantization": "Q4_K_M", "context_length": 128000,
+            "use_case": "Japanese language, multilingual chat",
+            "pipeline_tag": "text-generation", "architecture": "lfm2",
+            "hf_downloads": 0, "hf_likes": 0, "release_date": "2025-11-28",
+        },
+        # Liquid AI LFM2 Vision-Language models
+        {
+            "name": "LiquidAI/LFM2-VL-450M",
+            "provider": "Liquid AI", "parameter_count": "451M",
+            "parameters_raw": 450822656,
+            "min_ram_gb": 1.0, "recommended_ram_gb": 2.0, "min_vram_gb": 0.5,
+            "quantization": "Q4_K_M", "context_length": 32768,
+            "use_case": "Multimodal, vision and text",
+            "pipeline_tag": "image-text-to-text", "architecture": "lfm2",
+            "hf_downloads": 0, "hf_likes": 0, "release_date": "2025-11-28",
+        },
+        {
+            "name": "LiquidAI/LFM2-VL-1.6B",
+            "provider": "Liquid AI", "parameter_count": "1.6B",
+            "parameters_raw": 1584804000,
+            "min_ram_gb": 1.0, "recommended_ram_gb": 2.0, "min_vram_gb": 0.8,
+            "quantization": "Q4_K_M", "context_length": 32768,
+            "use_case": "Multimodal, vision and text",
+            "pipeline_tag": "image-text-to-text", "architecture": "lfm2",
+            "hf_downloads": 0, "hf_likes": 0, "release_date": "2025-11-28",
+        },
+        {
+            "name": "LiquidAI/LFM2-VL-3B",
+            "provider": "Liquid AI", "parameter_count": "3.0B",
+            "parameters_raw": 2998975216,
+            "min_ram_gb": 1.7, "recommended_ram_gb": 2.8, "min_vram_gb": 1.5,
+            "quantization": "Q4_K_M", "context_length": 32768,
+            "use_case": "Multimodal, vision and text",
+            "pipeline_tag": "image-text-to-text", "architecture": "lfm2",
+            "hf_downloads": 0, "hf_likes": 0, "release_date": "2025-11-28",
+        },
+        {
+            "name": "LiquidAI/LFM2.5-VL-1.6B",
+            "provider": "Liquid AI", "parameter_count": "1.6B",
+            "parameters_raw": 1596625904,
+            "min_ram_gb": 1.0, "recommended_ram_gb": 2.0, "min_vram_gb": 0.8,
+            "quantization": "Q4_K_M", "context_length": 32768,
+            "use_case": "Multimodal, vision and text",
+            "pipeline_tag": "image-text-to-text", "architecture": "lfm2",
+            "hf_downloads": 0, "hf_likes": 0, "release_date": "2025-11-28",
+        },
+        # Liquid AI LFM2 Audio models
+        {
+            "name": "LiquidAI/LFM2-Audio-1.5B",
+            "provider": "Liquid AI", "parameter_count": "1.5B",
+            "parameters_raw": 1500000000,
+            "min_ram_gb": 1.0, "recommended_ram_gb": 2.0, "min_vram_gb": 0.8,
+            "quantization": "Q4_K_M", "context_length": 32768,
+            "use_case": "Speech-to-speech, ASR, TTS",
+            "pipeline_tag": "audio-to-audio", "architecture": "lfm2",
+            "hf_downloads": 0, "hf_likes": 0, "release_date": "2025-11-28",
+        },
+        {
+            "name": "LiquidAI/LFM2.5-Audio-1.5B",
+            "provider": "Liquid AI", "parameter_count": "1.5B",
+            "parameters_raw": 1500000000,
+            "min_ram_gb": 1.0, "recommended_ram_gb": 2.0, "min_vram_gb": 0.8,
+            "quantization": "Q4_K_M", "context_length": 32768,
+            "use_case": "Speech-to-speech, ASR, TTS",
+            "pipeline_tag": "audio-to-audio", "architecture": "lfm2",
+            "hf_downloads": 0, "hf_likes": 0, "release_date": "2025-11-28",
+        },
+        # Liquid AI Liquid Nanos (task-specific fine-tunes)
+        {
+            "name": "LiquidAI/LFM2-1.2B-Tool",
+            "provider": "Liquid AI", "parameter_count": "1.2B",
+            "parameters_raw": 1170340608,
+            "min_ram_gb": 1.0, "recommended_ram_gb": 2.0, "min_vram_gb": 0.6,
+            "quantization": "Q4_K_M", "context_length": 128000,
+            "use_case": "Tool calling, function calling",
+            "pipeline_tag": "text-generation", "architecture": "lfm2",
+            "hf_downloads": 0, "hf_likes": 0, "release_date": "2025-11-28",
+        },
+        {
+            "name": "LiquidAI/LFM2-1.2B-RAG",
+            "provider": "Liquid AI", "parameter_count": "1.2B",
+            "parameters_raw": 1170340608,
+            "min_ram_gb": 1.0, "recommended_ram_gb": 2.0, "min_vram_gb": 0.6,
+            "quantization": "Q4_K_M", "context_length": 128000,
+            "use_case": "Retrieval-augmented generation",
+            "pipeline_tag": "text-generation", "architecture": "lfm2",
+            "hf_downloads": 0, "hf_likes": 0, "release_date": "2025-11-28",
+        },
+        {
+            "name": "LiquidAI/LFM2-1.2B-Extract",
+            "provider": "Liquid AI", "parameter_count": "1.2B",
+            "parameters_raw": 1170340608,
+            "min_ram_gb": 1.0, "recommended_ram_gb": 2.0, "min_vram_gb": 0.6,
+            "quantization": "Q4_K_M", "context_length": 128000,
+            "use_case": "Data extraction, structured output",
+            "pipeline_tag": "text-generation", "architecture": "lfm2",
+            "hf_downloads": 0, "hf_likes": 0, "release_date": "2025-11-28",
+        },
+        {
+            "name": "LiquidAI/LFM2-350M-Extract",
+            "provider": "Liquid AI", "parameter_count": "354M",
+            "parameters_raw": 354483968,
+            "min_ram_gb": 1.0, "recommended_ram_gb": 2.0, "min_vram_gb": 0.5,
+            "quantization": "Q4_K_M", "context_length": 128000,
+            "use_case": "Data extraction, structured output",
+            "pipeline_tag": "text-generation", "architecture": "lfm2",
+            "hf_downloads": 0, "hf_likes": 0, "release_date": "2025-11-28",
+        },
+        {
+            "name": "LiquidAI/LFM2-350M-Math",
+            "provider": "Liquid AI", "parameter_count": "354M",
+            "parameters_raw": 354483968,
+            "min_ram_gb": 1.0, "recommended_ram_gb": 2.0, "min_vram_gb": 0.5,
+            "quantization": "Q4_K_M", "context_length": 128000,
+            "use_case": "Math reasoning, chain-of-thought",
+            "pipeline_tag": "text-generation", "architecture": "lfm2",
+            "hf_downloads": 0, "hf_likes": 0, "release_date": "2025-11-28",
+        },
+        {
+            "name": "LiquidAI/LFM2-350M-ENJP-MT",
+            "provider": "Liquid AI", "parameter_count": "354M",
+            "parameters_raw": 354483968,
+            "min_ram_gb": 1.0, "recommended_ram_gb": 2.0, "min_vram_gb": 0.5,
+            "quantization": "Q4_K_M", "context_length": 128000,
+            "use_case": "English-Japanese translation",
+            "pipeline_tag": "translation", "architecture": "lfm2",
+            "hf_downloads": 0, "hf_likes": 0, "release_date": "2025-11-28",
+        },
+        {
+            "name": "LiquidAI/LFM2-350M-PII-Extract-JP",
+            "provider": "Liquid AI", "parameter_count": "354M",
+            "parameters_raw": 354483968,
+            "min_ram_gb": 1.0, "recommended_ram_gb": 2.0, "min_vram_gb": 0.5,
+            "quantization": "Q4_K_M", "context_length": 128000,
+            "use_case": "PII extraction, Japanese",
+            "pipeline_tag": "text-generation", "architecture": "lfm2",
+            "hf_downloads": 0, "hf_likes": 0, "release_date": "2025-11-28",
+        },
+        {
+            "name": "LiquidAI/LFM2-ColBERT-350M",
+            "provider": "Liquid AI", "parameter_count": "353M",
+            "parameters_raw": 353322752,
+            "min_ram_gb": 1.0, "recommended_ram_gb": 2.0, "min_vram_gb": 0.5,
+            "quantization": "Q4_K_M", "context_length": 128000,
+            "use_case": "Semantic search, sentence similarity",
+            "pipeline_tag": "sentence-similarity", "architecture": "lfm2",
+            "hf_downloads": 0, "hf_likes": 0, "release_date": "2025-11-28",
+        },
+        {
+            "name": "LiquidAI/LFM2-2.6B-Transcript",
+            "provider": "Liquid AI", "parameter_count": "2.6B",
+            "parameters_raw": 2569272320,
+            "min_ram_gb": 1.4, "recommended_ram_gb": 2.4, "min_vram_gb": 1.3,
+            "quantization": "Q4_K_M", "context_length": 128000,
+            "use_case": "Meeting transcription, summarization",
+            "pipeline_tag": "text-generation", "architecture": "lfm2",
+            "hf_downloads": 0, "hf_likes": 0, "release_date": "2025-11-28",
         },
     ]
 

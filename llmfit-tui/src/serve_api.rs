@@ -311,6 +311,7 @@ fn filtered_fits(
     match runtime_filter {
         RuntimeFilter::Any => {}
         RuntimeFilter::Mlx => fits.retain(|f| f.runtime == InferenceRuntime::Mlx),
+        RuntimeFilter::Vllm => fits.retain(|f| f.runtime == InferenceRuntime::Vllm),
         RuntimeFilter::LlamaCpp => {
             fits.retain(|f| f.runtime == InferenceRuntime::LlamaCpp);
         }
@@ -333,6 +334,7 @@ enum RuntimeFilter {
     Any,
     Mlx,
     LlamaCpp,
+    Vllm,
 }
 
 fn parse_sort(raw: Option<&str>) -> Result<SortColumn, ApiError> {
@@ -379,9 +381,10 @@ fn parse_runtime(raw: Option<&str>) -> Result<RuntimeFilter, ApiError> {
         "any" => RuntimeFilter::Any,
         "mlx" => RuntimeFilter::Mlx,
         "llamacpp" | "llama.cpp" | "llama_cpp" => RuntimeFilter::LlamaCpp,
+        "vllm" => RuntimeFilter::Vllm,
         _ => {
             return Err(ApiError::bad_request(
-                "invalid runtime value: use any|mlx|llamacpp",
+                "invalid runtime value: use any|mlx|llamacpp|vllm",
             ));
         }
     };
@@ -457,6 +460,7 @@ fn runtime_code(runtime: InferenceRuntime) -> &'static str {
     match runtime {
         InferenceRuntime::Mlx => "mlx",
         InferenceRuntime::LlamaCpp => "llamacpp",
+        InferenceRuntime::Vllm => "vllm",
     }
 }
 
@@ -518,6 +522,8 @@ fn fit_to_json(fit: &ModelFit) -> serde_json::Value {
         "best_quant": fit.best_quant,
         "memory_required_gb": round2(fit.memory_required_gb),
         "memory_available_gb": round2(fit.memory_available_gb),
+        "moe_offloaded_gb": fit.moe_offloaded_gb.map(round2),
+        "total_memory_gb": round2(fit.memory_required_gb + fit.moe_offloaded_gb.unwrap_or(0.0)),
         "utilization_pct": round1(fit.utilization_pct),
         "notes": fit.notes,
         "gguf_sources": fit.model.gguf_sources,

@@ -1026,6 +1026,23 @@
     "_discovered": true
   },
   {
+    "name": "LiquidAI/LFM2-ColBERT-350M",
+    "provider": "Liquid AI",
+    "parameter_count": "353M",
+    "parameters_raw": 353322752,
+    "min_ram_gb": 1.0,
+    "recommended_ram_gb": 2.0,
+    "min_vram_gb": 0.5,
+    "quantization": "Q4_K_M",
+    "context_length": 128000,
+    "use_case": "Semantic search, sentence similarity",
+    "pipeline_tag": "sentence-similarity",
+    "architecture": "lfm2",
+    "hf_downloads": 0,
+    "hf_likes": 0,
+    "release_date": "2025-11-28"
+  },
+  {
     "name": "LiquidAI/LFM2-350M",
     "provider": "liquidai",
     "parameter_count": "354M",
@@ -1070,6 +1087,108 @@
     "_discovered": true
   },
   {
+    "name": "LiquidAI/LFM2-350M-Extract",
+    "provider": "Liquid AI",
+    "parameter_count": "354M",
+    "parameters_raw": 354483968,
+    "min_ram_gb": 1.0,
+    "recommended_ram_gb": 2.0,
+    "min_vram_gb": 0.5,
+    "quantization": "Q4_K_M",
+    "context_length": 128000,
+    "use_case": "Data extraction, structured output",
+    "pipeline_tag": "text-generation",
+    "architecture": "lfm2",
+    "hf_downloads": 0,
+    "hf_likes": 0,
+    "release_date": "2025-11-28"
+  },
+  {
+    "name": "LiquidAI/LFM2-350M-Math",
+    "provider": "Liquid AI",
+    "parameter_count": "354M",
+    "parameters_raw": 354483968,
+    "min_ram_gb": 1.0,
+    "recommended_ram_gb": 2.0,
+    "min_vram_gb": 0.5,
+    "quantization": "Q4_K_M",
+    "context_length": 128000,
+    "use_case": "Math reasoning, chain-of-thought",
+    "pipeline_tag": "text-generation",
+    "architecture": "lfm2",
+    "hf_downloads": 0,
+    "hf_likes": 0,
+    "release_date": "2025-11-28"
+  },
+  {
+    "name": "LiquidAI/LFM2-350M-ENJP-MT",
+    "provider": "Liquid AI",
+    "parameter_count": "354M",
+    "parameters_raw": 354483968,
+    "min_ram_gb": 1.0,
+    "recommended_ram_gb": 2.0,
+    "min_vram_gb": 0.5,
+    "quantization": "Q4_K_M",
+    "context_length": 128000,
+    "use_case": "English-Japanese translation",
+    "pipeline_tag": "translation",
+    "architecture": "lfm2",
+    "hf_downloads": 0,
+    "hf_likes": 0,
+    "release_date": "2025-11-28"
+  },
+  {
+    "name": "LiquidAI/LFM2-350M-PII-Extract-JP",
+    "provider": "Liquid AI",
+    "parameter_count": "354M",
+    "parameters_raw": 354483968,
+    "min_ram_gb": 1.0,
+    "recommended_ram_gb": 2.0,
+    "min_vram_gb": 0.5,
+    "quantization": "Q4_K_M",
+    "context_length": 128000,
+    "use_case": "PII extraction, Japanese",
+    "pipeline_tag": "text-generation",
+    "architecture": "lfm2",
+    "hf_downloads": 0,
+    "hf_likes": 0,
+    "release_date": "2025-11-28"
+  },
+  {
+    "name": "lmstudio-community/LFM2-350M-MLX-8bit",
+    "provider": "lmstudio-community",
+    "parameter_count": "354M",
+    "parameters_raw": 354483968,
+    "min_ram_gb": 1.0,
+    "recommended_ram_gb": 2.0,
+    "min_vram_gb": 0.5,
+    "quantization": "mlx-8bit",
+    "context_length": 128000,
+    "use_case": "Lightweight, edge deployment",
+    "pipeline_tag": "text-generation",
+    "architecture": "lfm2",
+    "hf_downloads": 0,
+    "hf_likes": 0,
+    "release_date": "2025-11-28"
+  },
+  {
+    "name": "lmstudio-community/LFM2-350M-MLX-bf16",
+    "provider": "lmstudio-community",
+    "parameter_count": "354M",
+    "parameters_raw": 354483968,
+    "min_ram_gb": 1.0,
+    "recommended_ram_gb": 2.0,
+    "min_vram_gb": 0.7,
+    "quantization": "BF16",
+    "context_length": 128000,
+    "use_case": "Lightweight, edge deployment",
+    "pipeline_tag": "text-generation",
+    "architecture": "lfm2",
+    "hf_downloads": 0,
+    "hf_likes": 0,
+    "release_date": "2025-11-28"
+  },
+  {
     "name": "HuggingFaceTB/SmolLM-360M-Instruct",
     "provider": "huggingfacetb",
     "parameter_count": "362M",
@@ -1106,6 +1225,23 @@
     "hf_likes": 77,
     "release_date": "2025-06-05",
     "_discovered": true
+  },
+  {
+    "name": "LiquidAI/LFM2-VL-450M",
+    "provider": "Liquid AI",
+    "parameter_count": "451M",
+    "parameters_raw": 450822656,
+    "min_ram_gb": 1.0,
+    "recommended_ram_gb": 2.0,
+    "min_vram_gb": 0.5,
+    "quantization": "Q4_K_M",
+    "context_length": 32768,
+    "use_case": "Multimodal, vision and text",
+    "pipeline_tag": "image-text-to-text",
+    "architecture": "lfm2",
+    "hf_downloads": 0,
+    "hf_likes": 0,
+    "release_date": "2025-11-28"
   },
   {
     "name": "lmstudio-community/Qwen3-1.7B-MLX-8bit",
@@ -1489,6 +1625,24 @@
     "_discovered": true
   },
   {
+    "name": "google/t5gemma-b-b-prefixlm",
+    "provider": "Google",
+    "parameter_count": "591M",
+    "parameters_raw": 591490560,
+    "min_ram_gb": 1.0,
+    "recommended_ram_gb": 2.0,
+    "min_vram_gb": 0.5,
+    "quantization": "Q4_K_M",
+    "context_length": 4096,
+    "use_case": "General purpose text generation",
+    "pipeline_tag": "text-generation",
+    "architecture": "t5gemma",
+    "hf_downloads": 1187971,
+    "hf_likes": 13,
+    "release_date": "2025-06-19",
+    "_discovered": true
+  },
+  {
     "name": "lmstudio-community/Phi-4-mini-reasoning-MLX-4bit",
     "provider": "lmstudio-community",
     "parameter_count": "600M",
@@ -1607,6 +1761,57 @@
     "hf_likes": 1,
     "release_date": "2025-04-28",
     "_discovered": true
+  },
+  {
+    "name": "LiquidAI/LFM2-700M",
+    "provider": "Liquid AI",
+    "parameter_count": "742M",
+    "parameters_raw": 742489344,
+    "min_ram_gb": 1.0,
+    "recommended_ram_gb": 2.0,
+    "min_vram_gb": 0.5,
+    "quantization": "Q4_K_M",
+    "context_length": 128000,
+    "use_case": "Lightweight, edge deployment",
+    "pipeline_tag": "text-generation",
+    "architecture": "lfm2",
+    "hf_downloads": 0,
+    "hf_likes": 0,
+    "release_date": "2025-11-28"
+  },
+  {
+    "name": "lmstudio-community/LFM2-700M-MLX-8bit",
+    "provider": "lmstudio-community",
+    "parameter_count": "742M",
+    "parameters_raw": 742489344,
+    "min_ram_gb": 1.0,
+    "recommended_ram_gb": 2.0,
+    "min_vram_gb": 0.8,
+    "quantization": "mlx-8bit",
+    "context_length": 128000,
+    "use_case": "Lightweight, edge deployment",
+    "pipeline_tag": "text-generation",
+    "architecture": "lfm2",
+    "hf_downloads": 0,
+    "hf_likes": 0,
+    "release_date": "2025-11-28"
+  },
+  {
+    "name": "lmstudio-community/LFM2-700M-MLX-bf16",
+    "provider": "lmstudio-community",
+    "parameter_count": "742M",
+    "parameters_raw": 742489344,
+    "min_ram_gb": 1.7,
+    "recommended_ram_gb": 2.8,
+    "min_vram_gb": 1.5,
+    "quantization": "BF16",
+    "context_length": 128000,
+    "use_case": "Lightweight, edge deployment",
+    "pipeline_tag": "text-generation",
+    "architecture": "lfm2",
+    "hf_downloads": 0,
+    "hf_likes": 0,
+    "release_date": "2025-11-28"
   },
   {
     "name": "Qwen/Qwen3-0.6B",
@@ -2008,6 +2213,159 @@
     "_discovered": true
   },
   {
+    "name": "LiquidAI/LFM2-1.2B",
+    "provider": "Liquid AI",
+    "parameter_count": "1.2B",
+    "parameters_raw": 1170340608,
+    "min_ram_gb": 1.0,
+    "recommended_ram_gb": 2.0,
+    "min_vram_gb": 0.6,
+    "quantization": "Q4_K_M",
+    "context_length": 128000,
+    "use_case": "General purpose text generation",
+    "pipeline_tag": "text-generation",
+    "architecture": "lfm2",
+    "hf_downloads": 0,
+    "hf_likes": 0,
+    "release_date": "2025-11-28"
+  },
+  {
+    "name": "LiquidAI/LFM2.5-1.2B-Base",
+    "provider": "Liquid AI",
+    "parameter_count": "1.2B",
+    "parameters_raw": 1170340608,
+    "min_ram_gb": 1.0,
+    "recommended_ram_gb": 2.0,
+    "min_vram_gb": 0.6,
+    "quantization": "Q4_K_M",
+    "context_length": 128000,
+    "use_case": "General purpose text generation",
+    "pipeline_tag": "text-generation",
+    "architecture": "lfm2",
+    "hf_downloads": 0,
+    "hf_likes": 0,
+    "release_date": "2025-11-28"
+  },
+  {
+    "name": "LiquidAI/LFM2.5-1.2B-Thinking",
+    "provider": "Liquid AI",
+    "parameter_count": "1.2B",
+    "parameters_raw": 1170340608,
+    "min_ram_gb": 1.0,
+    "recommended_ram_gb": 2.0,
+    "min_vram_gb": 0.6,
+    "quantization": "Q4_K_M",
+    "context_length": 128000,
+    "use_case": "Advanced reasoning, chain-of-thought",
+    "pipeline_tag": "text-generation",
+    "architecture": "lfm2",
+    "hf_downloads": 0,
+    "hf_likes": 0,
+    "release_date": "2025-11-28"
+  },
+  {
+    "name": "LiquidAI/LFM2.5-1.2B-JP",
+    "provider": "Liquid AI",
+    "parameter_count": "1.2B",
+    "parameters_raw": 1170340608,
+    "min_ram_gb": 1.0,
+    "recommended_ram_gb": 2.0,
+    "min_vram_gb": 0.6,
+    "quantization": "Q4_K_M",
+    "context_length": 128000,
+    "use_case": "Japanese language, multilingual chat",
+    "pipeline_tag": "text-generation",
+    "architecture": "lfm2",
+    "hf_downloads": 0,
+    "hf_likes": 0,
+    "release_date": "2025-11-28"
+  },
+  {
+    "name": "LiquidAI/LFM2-1.2B-Tool",
+    "provider": "Liquid AI",
+    "parameter_count": "1.2B",
+    "parameters_raw": 1170340608,
+    "min_ram_gb": 1.0,
+    "recommended_ram_gb": 2.0,
+    "min_vram_gb": 0.6,
+    "quantization": "Q4_K_M",
+    "context_length": 128000,
+    "use_case": "Tool calling, function calling",
+    "pipeline_tag": "text-generation",
+    "architecture": "lfm2",
+    "hf_downloads": 0,
+    "hf_likes": 0,
+    "release_date": "2025-11-28"
+  },
+  {
+    "name": "LiquidAI/LFM2-1.2B-RAG",
+    "provider": "Liquid AI",
+    "parameter_count": "1.2B",
+    "parameters_raw": 1170340608,
+    "min_ram_gb": 1.0,
+    "recommended_ram_gb": 2.0,
+    "min_vram_gb": 0.6,
+    "quantization": "Q4_K_M",
+    "context_length": 128000,
+    "use_case": "Retrieval-augmented generation",
+    "pipeline_tag": "text-generation",
+    "architecture": "lfm2",
+    "hf_downloads": 0,
+    "hf_likes": 0,
+    "release_date": "2025-11-28"
+  },
+  {
+    "name": "LiquidAI/LFM2-1.2B-Extract",
+    "provider": "Liquid AI",
+    "parameter_count": "1.2B",
+    "parameters_raw": 1170340608,
+    "min_ram_gb": 1.0,
+    "recommended_ram_gb": 2.0,
+    "min_vram_gb": 0.6,
+    "quantization": "Q4_K_M",
+    "context_length": 128000,
+    "use_case": "Data extraction, structured output",
+    "pipeline_tag": "text-generation",
+    "architecture": "lfm2",
+    "hf_downloads": 0,
+    "hf_likes": 0,
+    "release_date": "2025-11-28"
+  },
+  {
+    "name": "lmstudio-community/LFM2.5-1.2B-Thinking-MLX-8bit",
+    "provider": "lmstudio-community",
+    "parameter_count": "1.2B",
+    "parameters_raw": 1170340608,
+    "min_ram_gb": 1.3,
+    "recommended_ram_gb": 2.2,
+    "min_vram_gb": 1.2,
+    "quantization": "mlx-8bit",
+    "context_length": 128000,
+    "use_case": "Advanced reasoning, chain-of-thought",
+    "pipeline_tag": "text-generation",
+    "architecture": "lfm2",
+    "hf_downloads": 0,
+    "hf_likes": 0,
+    "release_date": "2025-11-28"
+  },
+  {
+    "name": "lmstudio-community/LFM2.5-1.2B-Thinking-MLX-bf16",
+    "provider": "lmstudio-community",
+    "parameter_count": "1.2B",
+    "parameters_raw": 1170340608,
+    "min_ram_gb": 2.6,
+    "recommended_ram_gb": 4.4,
+    "min_vram_gb": 2.4,
+    "quantization": "BF16",
+    "context_length": 128000,
+    "use_case": "Advanced reasoning, chain-of-thought",
+    "pipeline_tag": "text-generation",
+    "architecture": "lfm2",
+    "hf_downloads": 0,
+    "hf_likes": 0,
+    "release_date": "2025-11-28"
+  },
+  {
     "name": "allenai/OLMo-1B-hf",
     "provider": "allenai",
     "parameter_count": "1.2B",
@@ -2090,7 +2448,7 @@
     "min_ram_gb": 1.0,
     "recommended_ram_gb": 2.0,
     "min_vram_gb": 0.6,
-    "quantization": "Q4_K_M",
+    "quantization": "AWQ-4bit",
     "context_length": 40960,
     "use_case": "General purpose text generation",
     "capabilities": [],
@@ -2099,7 +2457,8 @@
     "hf_downloads": 99084,
     "hf_likes": 3,
     "release_date": "2025-07-12",
-    "_discovered": true
+    "_discovered": true,
+    "format": "awq"
   },
   {
     "name": "LGAI-EXAONE/EXAONE-4.0-1.2B",
@@ -2324,6 +2683,40 @@
     "_discovered": true
   },
   {
+    "name": "LiquidAI/LFM2-Audio-1.5B",
+    "provider": "Liquid AI",
+    "parameter_count": "1.5B",
+    "parameters_raw": 1500000000,
+    "min_ram_gb": 1.0,
+    "recommended_ram_gb": 2.0,
+    "min_vram_gb": 0.8,
+    "quantization": "Q4_K_M",
+    "context_length": 32768,
+    "use_case": "Speech-to-speech, ASR, TTS",
+    "pipeline_tag": "audio-to-audio",
+    "architecture": "lfm2",
+    "hf_downloads": 0,
+    "hf_likes": 0,
+    "release_date": "2025-11-28"
+  },
+  {
+    "name": "LiquidAI/LFM2.5-Audio-1.5B",
+    "provider": "Liquid AI",
+    "parameter_count": "1.5B",
+    "parameters_raw": 1500000000,
+    "min_ram_gb": 1.0,
+    "recommended_ram_gb": 2.0,
+    "min_vram_gb": 0.8,
+    "quantization": "Q4_K_M",
+    "context_length": 32768,
+    "use_case": "Speech-to-speech, ASR, TTS",
+    "pipeline_tag": "audio-to-audio",
+    "architecture": "lfm2",
+    "hf_downloads": 0,
+    "hf_likes": 0,
+    "release_date": "2025-11-28"
+  },
+  {
     "name": "EleutherAI/pythia-1.4b",
     "provider": "eleutherai",
     "parameter_count": "1.5B",
@@ -2545,6 +2938,91 @@
     "_discovered": true
   },
   {
+    "name": "LiquidAI/LFM2-VL-1.6B",
+    "provider": "Liquid AI",
+    "parameter_count": "1.6B",
+    "parameters_raw": 1584804000,
+    "min_ram_gb": 1.0,
+    "recommended_ram_gb": 2.0,
+    "min_vram_gb": 0.8,
+    "quantization": "Q4_K_M",
+    "context_length": 32768,
+    "use_case": "Multimodal, vision and text",
+    "pipeline_tag": "image-text-to-text",
+    "architecture": "lfm2",
+    "hf_downloads": 0,
+    "hf_likes": 0,
+    "release_date": "2025-11-28"
+  },
+  {
+    "name": "LiquidAI/LFM2.5-VL-1.6B",
+    "provider": "Liquid AI",
+    "parameter_count": "1.6B",
+    "parameters_raw": 1596625904,
+    "min_ram_gb": 1.0,
+    "recommended_ram_gb": 2.0,
+    "min_vram_gb": 0.8,
+    "quantization": "Q4_K_M",
+    "context_length": 32768,
+    "use_case": "Multimodal, vision and text",
+    "pipeline_tag": "image-text-to-text",
+    "architecture": "lfm2",
+    "hf_downloads": 0,
+    "hf_likes": 0,
+    "release_date": "2025-11-28"
+  },
+  {
+    "name": "lmstudio-community/LFM2.5-VL-1.6B-MLX-4bit",
+    "provider": "lmstudio-community",
+    "parameter_count": "1.6B",
+    "parameters_raw": 1596625904,
+    "min_ram_gb": 1.0,
+    "recommended_ram_gb": 2.0,
+    "min_vram_gb": 0.9,
+    "quantization": "mlx-4bit",
+    "context_length": 32768,
+    "use_case": "Multimodal, vision and text",
+    "pipeline_tag": "image-text-to-text",
+    "architecture": "lfm2",
+    "hf_downloads": 0,
+    "hf_likes": 0,
+    "release_date": "2025-11-28"
+  },
+  {
+    "name": "lmstudio-community/LFM2.5-VL-1.6B-MLX-6bit",
+    "provider": "lmstudio-community",
+    "parameter_count": "1.6B",
+    "parameters_raw": 1596625904,
+    "min_ram_gb": 1.3,
+    "recommended_ram_gb": 2.2,
+    "min_vram_gb": 1.2,
+    "quantization": "mlx-6bit",
+    "context_length": 32768,
+    "use_case": "Multimodal, vision and text",
+    "pipeline_tag": "image-text-to-text",
+    "architecture": "lfm2",
+    "hf_downloads": 0,
+    "hf_likes": 0,
+    "release_date": "2025-11-28"
+  },
+  {
+    "name": "lmstudio-community/LFM2.5-VL-1.6B-MLX-8bit",
+    "provider": "lmstudio-community",
+    "parameter_count": "1.6B",
+    "parameters_raw": 1596625904,
+    "min_ram_gb": 1.8,
+    "recommended_ram_gb": 3.0,
+    "min_vram_gb": 1.6,
+    "quantization": "mlx-8bit",
+    "context_length": 32768,
+    "use_case": "Multimodal, vision and text",
+    "pipeline_tag": "image-text-to-text",
+    "architecture": "lfm2",
+    "hf_downloads": 0,
+    "hf_likes": 0,
+    "release_date": "2025-11-28"
+  },
+  {
     "name": "stabilityai/stablelm-2-1_6b-chat",
     "provider": "Stability AI",
     "parameter_count": "1.6B",
@@ -2608,7 +3086,7 @@
     "min_ram_gb": 1.0,
     "recommended_ram_gb": 2.0,
     "min_vram_gb": 0.9,
-    "quantization": "Q4_K_M",
+    "quantization": "AWQ-8bit",
     "context_length": 262144,
     "use_case": "General purpose text generation",
     "capabilities": [],
@@ -2617,7 +3095,8 @@
     "hf_downloads": 49220,
     "hf_likes": 2,
     "release_date": "2026-02-15",
-    "_discovered": true
+    "_discovered": true,
+    "format": "awq"
   },
   {
     "name": "Qwen/Qwen3-1.7B-Base",
@@ -2688,7 +3167,7 @@
     "min_ram_gb": 1.0,
     "recommended_ram_gb": 2.0,
     "min_vram_gb": 0.9,
-    "quantization": "Q4_K_M",
+    "quantization": "AWQ-4bit",
     "context_length": 32768,
     "use_case": "Instruction following, chat",
     "capabilities": [
@@ -2699,7 +3178,8 @@
     "hf_downloads": 727989,
     "hf_likes": 6,
     "release_date": "2024-09-17",
-    "_discovered": true
+    "_discovered": true,
+    "format": "awq"
   },
   {
     "name": "Qwen/Qwen2.5-Coder-1.5B-Instruct-AWQ",
@@ -2709,7 +3189,7 @@
     "min_ram_gb": 1.0,
     "recommended_ram_gb": 2.0,
     "min_vram_gb": 0.9,
-    "quantization": "Q4_K_M",
+    "quantization": "AWQ-4bit",
     "context_length": 32768,
     "use_case": "Code generation and completion",
     "capabilities": [
@@ -2720,7 +3200,8 @@
     "hf_downloads": 164152,
     "hf_likes": 4,
     "release_date": "2024-09-20",
-    "_discovered": true
+    "_discovered": true,
+    "format": "awq"
   },
   {
     "name": "Qwen/Qwen2-1.5B-Instruct-AWQ",
@@ -2730,7 +3211,7 @@
     "min_ram_gb": 1.0,
     "recommended_ram_gb": 2.0,
     "min_vram_gb": 0.9,
-    "quantization": "Q4_K_M",
+    "quantization": "AWQ-4bit",
     "context_length": 32768,
     "use_case": "Instruction following, chat",
     "capabilities": [],
@@ -2739,7 +3220,8 @@
     "hf_downloads": 24850,
     "hf_likes": 9,
     "release_date": "2024-06-06",
-    "_discovered": true
+    "_discovered": true,
+    "format": "awq"
   },
   {
     "name": "Qwen/Qwen2-1.5B-Instruct-GPTQ-Int4",
@@ -2749,7 +3231,7 @@
     "min_ram_gb": 1.0,
     "recommended_ram_gb": 2.0,
     "min_vram_gb": 0.9,
-    "quantization": "Q4_K_M",
+    "quantization": "GPTQ-Int4",
     "context_length": 32768,
     "use_case": "Instruction following, chat",
     "capabilities": [],
@@ -2758,7 +3240,8 @@
     "hf_downloads": 24724,
     "hf_likes": 5,
     "release_date": "2024-06-06",
-    "_discovered": true
+    "_discovered": true,
+    "format": "gptq"
   },
   {
     "name": "RedHatAI/Qwen2.5-1.5B-quantized.w8a8",
@@ -2827,7 +3310,7 @@
     "min_ram_gb": 1.1,
     "recommended_ram_gb": 2.0,
     "min_vram_gb": 1.0,
-    "quantization": "Q4_K_M",
+    "quantization": "AWQ-4bit",
     "context_length": 131072,
     "use_case": "Lightweight, edge deployment",
     "capabilities": [],
@@ -2840,7 +3323,8 @@
     "num_experts": 64,
     "active_experts": 6,
     "active_parameters": 277721550,
-    "_discovered": true
+    "_discovered": true,
+    "format": "awq"
   },
   {
     "name": "Qwen/Qwen3-1.7B-FP8",
@@ -2890,7 +3374,7 @@
     "min_ram_gb": 1.2,
     "recommended_ram_gb": 2.0,
     "min_vram_gb": 1.1,
-    "quantization": "Q4_K_M",
+    "quantization": "AWQ-4bit",
     "context_length": 40960,
     "use_case": "General purpose text generation",
     "capabilities": [
@@ -2901,7 +3385,8 @@
     "hf_downloads": 25559,
     "hf_likes": 0,
     "release_date": "2025-07-27",
-    "_discovered": true
+    "_discovered": true,
+    "format": "awq"
   },
   {
     "name": "Qwen/Qwen3.5-2B",
@@ -3099,6 +3584,40 @@
     "_discovered": true
   },
   {
+    "name": "LiquidAI/LFM2-2.6B-Exp",
+    "provider": "Liquid AI",
+    "parameter_count": "2.6B",
+    "parameters_raw": 2569272320,
+    "min_ram_gb": 1.4,
+    "recommended_ram_gb": 2.4,
+    "min_vram_gb": 1.3,
+    "quantization": "Q4_K_M",
+    "context_length": 128000,
+    "use_case": "Instruction following, math, knowledge",
+    "pipeline_tag": "text-generation",
+    "architecture": "lfm2",
+    "hf_downloads": 0,
+    "hf_likes": 0,
+    "release_date": "2025-11-28"
+  },
+  {
+    "name": "LiquidAI/LFM2-2.6B-Transcript",
+    "provider": "Liquid AI",
+    "parameter_count": "2.6B",
+    "parameters_raw": 2569272320,
+    "min_ram_gb": 1.4,
+    "recommended_ram_gb": 2.4,
+    "min_vram_gb": 1.3,
+    "quantization": "Q4_K_M",
+    "context_length": 128000,
+    "use_case": "Meeting transcription, summarization",
+    "pipeline_tag": "text-generation",
+    "architecture": "lfm2",
+    "hf_downloads": 0,
+    "hf_likes": 0,
+    "release_date": "2025-11-28"
+  },
+  {
     "name": "google/gemma-2-2b-it",
     "provider": "Google",
     "parameter_count": "2.6B",
@@ -3227,6 +3746,23 @@
     ]
   },
   {
+    "name": "LiquidAI/LFM2-VL-3B",
+    "provider": "Liquid AI",
+    "parameter_count": "3.0B",
+    "parameters_raw": 2998975216,
+    "min_ram_gb": 1.7,
+    "recommended_ram_gb": 2.8,
+    "min_vram_gb": 1.5,
+    "quantization": "Q4_K_M",
+    "context_length": 32768,
+    "use_case": "Multimodal, vision and text",
+    "pipeline_tag": "image-text-to-text",
+    "architecture": "lfm2",
+    "hf_downloads": 0,
+    "hf_likes": 0,
+    "release_date": "2025-11-28"
+  },
+  {
     "name": "bigscience/bloom-3b",
     "provider": "bigscience",
     "parameter_count": "3.0B",
@@ -3272,7 +3808,7 @@
     "min_ram_gb": 1.7,
     "recommended_ram_gb": 2.8,
     "min_vram_gb": 1.6,
-    "quantization": "Q4_K_M",
+    "quantization": "GPTQ-Int4",
     "context_length": 8192,
     "use_case": "General purpose text generation",
     "capabilities": [],
@@ -3281,7 +3817,8 @@
     "hf_downloads": 20793,
     "hf_likes": 1,
     "release_date": "2024-04-07",
-    "_discovered": true
+    "_discovered": true,
+    "format": "gptq"
   },
   {
     "name": "Qwen/Qwen2.5-3B-Instruct",
@@ -3463,7 +4000,7 @@
     "min_ram_gb": 1.9,
     "recommended_ram_gb": 3.2,
     "min_vram_gb": 1.7,
-    "quantization": "Q4_K_M",
+    "quantization": "AWQ-4bit",
     "context_length": 32768,
     "use_case": "Instruction following, chat",
     "capabilities": [
@@ -3474,7 +4011,8 @@
     "hf_downloads": 38262,
     "hf_likes": 16,
     "release_date": "2024-09-17",
-    "_discovered": true
+    "_discovered": true,
+    "format": "awq"
   },
   {
     "name": "Qwen/Qwen2.5-Coder-3B-Instruct-AWQ",
@@ -3484,7 +4022,7 @@
     "min_ram_gb": 1.9,
     "recommended_ram_gb": 3.2,
     "min_vram_gb": 1.7,
-    "quantization": "Q4_K_M",
+    "quantization": "AWQ-4bit",
     "context_length": 32768,
     "use_case": "Code generation and completion",
     "capabilities": [
@@ -3495,7 +4033,8 @@
     "hf_downloads": 21964,
     "hf_likes": 5,
     "release_date": "2024-11-09",
-    "_discovered": true
+    "_discovered": true,
+    "format": "awq"
   },
   {
     "name": "ibm-granite/granite-3b-code-base-2k",
@@ -3700,7 +4239,7 @@
     "min_ram_gb": 2.1,
     "recommended_ram_gb": 3.6,
     "min_vram_gb": 2.0,
-    "quantization": "Q4_K_M",
+    "quantization": "AWQ-4bit",
     "context_length": 4096,
     "use_case": "Instruction following, chat",
     "capabilities": [],
@@ -3709,7 +4248,8 @@
     "hf_downloads": 40949,
     "hf_likes": 5,
     "release_date": "2024-05-05",
-    "_discovered": true
+    "_discovered": true,
+    "format": "awq"
   },
   {
     "name": "numind/NuExtract-1.5",
@@ -3738,7 +4278,7 @@
     "min_ram_gb": 2.1,
     "recommended_ram_gb": 3.6,
     "min_vram_gb": 2.0,
-    "quantization": "Q4_K_M",
+    "quantization": "GPTQ-Int4",
     "context_length": 4096,
     "use_case": "Instruction following, chat",
     "capabilities": [],
@@ -3747,7 +4287,8 @@
     "hf_downloads": 881144,
     "hf_likes": 2,
     "release_date": "2024-04-25",
-    "_discovered": true
+    "_discovered": true,
+    "format": "gptq"
   },
   {
     "name": "Nanbeige/Nanbeige4.1-3B",
@@ -3820,7 +4361,7 @@
     "min_ram_gb": 2.2,
     "recommended_ram_gb": 3.7,
     "min_vram_gb": 2.1,
-    "quantization": "Q4_K_M",
+    "quantization": "AWQ-4bit",
     "context_length": 40960,
     "use_case": "General purpose text generation",
     "capabilities": [
@@ -3831,7 +4372,8 @@
     "hf_downloads": 344398,
     "hf_likes": 25,
     "release_date": "2025-05-05",
-    "_discovered": true
+    "_discovered": true,
+    "format": "awq"
   },
   {
     "name": "typhoon-ai/typhoon2.5-qwen3-4b",
@@ -3862,7 +4404,7 @@
     "min_ram_gb": 2.2,
     "recommended_ram_gb": 3.7,
     "min_vram_gb": 2.1,
-    "quantization": "Q4_K_M",
+    "quantization": "GPTQ-Int4",
     "context_length": 262144,
     "use_case": "Instruction following, chat",
     "capabilities": [
@@ -3873,7 +4415,8 @@
     "hf_downloads": 36817,
     "hf_likes": 2,
     "release_date": "2025-09-01",
-    "_discovered": true
+    "_discovered": true,
+    "format": "gptq"
   },
   {
     "name": "TIGER-Lab/VLM2Vec-Full",
@@ -4045,7 +4588,7 @@
     "min_ram_gb": 2.6,
     "recommended_ram_gb": 4.3,
     "min_vram_gb": 2.4,
-    "quantization": "Q4_K_M",
+    "quantization": "AWQ-4bit",
     "context_length": 262144,
     "use_case": "Code generation and completion",
     "capabilities": [
@@ -4060,7 +4603,8 @@
     "num_experts": 128,
     "active_experts": 8,
     "active_parameters": 503765510,
-    "_discovered": true
+    "_discovered": true,
+    "format": "awq"
   },
   {
     "name": "Qwen/Qwen3.5-4B",
@@ -4177,7 +4721,7 @@
     "min_ram_gb": 2.8,
     "recommended_ram_gb": 4.7,
     "min_vram_gb": 2.6,
-    "quantization": "Q4_K_M",
+    "quantization": "AWQ-4bit",
     "context_length": 262144,
     "use_case": "General purpose text generation",
     "capabilities": [],
@@ -4186,7 +4730,8 @@
     "hf_downloads": 38947,
     "hf_likes": 4,
     "release_date": "2026-01-31",
-    "_discovered": true
+    "_discovered": true,
+    "format": "awq"
   },
   {
     "name": "lmstudio-community/Qwen3-32B-MLX-4bit",
@@ -4257,7 +4802,7 @@
     "min_ram_gb": 3.0,
     "recommended_ram_gb": 4.9,
     "min_vram_gb": 2.7,
-    "quantization": "Q4_K_M",
+    "quantization": "AWQ-4bit",
     "context_length": 262144,
     "use_case": "Code generation and completion",
     "capabilities": [
@@ -4272,7 +4817,8 @@
     "num_experts": 128,
     "active_experts": 8,
     "active_parameters": 580405768,
-    "_discovered": true
+    "_discovered": true,
+    "format": "awq"
   },
   {
     "name": "cyankiwi/Qwen3-30B-A3B-Instruct-2507-AWQ-4bit",
@@ -4282,7 +4828,7 @@
     "min_ram_gb": 3.0,
     "recommended_ram_gb": 4.9,
     "min_vram_gb": 2.7,
-    "quantization": "Q4_K_M",
+    "quantization": "AWQ-4bit",
     "context_length": 262144,
     "use_case": "Instruction following, chat",
     "capabilities": [
@@ -4297,7 +4843,8 @@
     "num_experts": 128,
     "active_experts": 8,
     "active_parameters": 580405768,
-    "_discovered": true
+    "_discovered": true,
+    "format": "awq"
   },
   {
     "name": "cyankiwi/MiroThinker-v1.5-30B-AWQ-4bit",
@@ -4307,7 +4854,7 @@
     "min_ram_gb": 3.0,
     "recommended_ram_gb": 4.9,
     "min_vram_gb": 2.7,
-    "quantization": "Q4_K_M",
+    "quantization": "AWQ-4bit",
     "context_length": 262144,
     "use_case": "General purpose text generation",
     "capabilities": [],
@@ -4320,7 +4867,8 @@
     "num_experts": 128,
     "active_experts": 8,
     "active_parameters": 580405768,
-    "_discovered": true
+    "_discovered": true,
+    "format": "awq"
   },
   {
     "name": "01-ai/Yi-6B-Chat",
@@ -4371,7 +4919,7 @@
     "min_ram_gb": 3.6,
     "recommended_ram_gb": 6.0,
     "min_vram_gb": 3.3,
-    "quantization": "Q4_K_M",
+    "quantization": "AWQ-4bit",
     "context_length": 202752,
     "use_case": "General purpose text generation",
     "capabilities": [],
@@ -4380,7 +4928,8 @@
     "hf_downloads": 217691,
     "hf_likes": 46,
     "release_date": "2026-01-19",
-    "_discovered": true
+    "_discovered": true,
+    "format": "awq"
   },
   {
     "name": "lmsys/vicuna-7b-v1.5",
@@ -5017,7 +5566,7 @@
     "min_ram_gb": 4.1,
     "recommended_ram_gb": 6.8,
     "min_vram_gb": 3.7,
-    "quantization": "Q4_K_M",
+    "quantization": "GPTQ-Int4",
     "context_length": 32768,
     "use_case": "Instruction following, chat",
     "capabilities": [
@@ -5028,7 +5577,8 @@
     "hf_downloads": 35763,
     "hf_likes": 1,
     "release_date": "2024-05-22",
-    "_discovered": true
+    "_discovered": true,
+    "format": "gptq"
   },
   {
     "name": "allenai/Olmo-3-7B-Instruct-SFT",
@@ -5076,7 +5626,7 @@
     "min_ram_gb": 4.1,
     "recommended_ram_gb": 6.9,
     "min_vram_gb": 3.8,
-    "quantization": "Q4_K_M",
+    "quantization": "GPTQ-Int4",
     "context_length": 16384,
     "use_case": "Code generation and completion",
     "capabilities": [],
@@ -5085,7 +5635,8 @@
     "hf_downloads": 36955,
     "hf_likes": 2,
     "release_date": "2024-03-22",
-    "_discovered": true
+    "_discovered": true,
+    "format": "gptq"
   },
   {
     "name": "tiiuae/Falcon3-7B-Instruct",
@@ -5224,7 +5775,7 @@
     "min_ram_gb": 4.3,
     "recommended_ram_gb": 7.1,
     "min_vram_gb": 3.9,
-    "quantization": "Q4_K_M",
+    "quantization": "AWQ-4bit",
     "context_length": 32768,
     "use_case": "Code generation and completion",
     "capabilities": [
@@ -5235,7 +5786,8 @@
     "hf_downloads": 1107387,
     "hf_likes": 19,
     "release_date": "2024-09-20",
-    "_discovered": true
+    "_discovered": true,
+    "format": "awq"
   },
   {
     "name": "Qwen/Qwen2.5-Coder-7B-Instruct-GPTQ-Int4",
@@ -5245,7 +5797,7 @@
     "min_ram_gb": 4.3,
     "recommended_ram_gb": 7.1,
     "min_vram_gb": 3.9,
-    "quantization": "Q4_K_M",
+    "quantization": "GPTQ-Int4",
     "context_length": 32768,
     "use_case": "Code generation and completion",
     "capabilities": [
@@ -5256,7 +5808,8 @@
     "hf_downloads": 1066717,
     "hf_likes": 13,
     "release_date": "2024-09-20",
-    "_discovered": true
+    "_discovered": true,
+    "format": "gptq"
   },
   {
     "name": "Qwen/Qwen2.5-Math-7B-Instruct",
@@ -5339,7 +5892,7 @@
     "min_ram_gb": 4.3,
     "recommended_ram_gb": 7.1,
     "min_vram_gb": 3.9,
-    "quantization": "Q4_K_M",
+    "quantization": "GPTQ-Int4",
     "context_length": 32768,
     "use_case": "Instruction following, chat",
     "capabilities": [
@@ -5350,7 +5903,8 @@
     "hf_downloads": 158122,
     "hf_likes": 29,
     "release_date": "2024-09-17",
-    "_discovered": true
+    "_discovered": true,
+    "format": "gptq"
   },
   {
     "name": "Dream-org/Dream-v0-Instruct-7B",
@@ -5465,7 +6019,7 @@
     "min_ram_gb": 4.3,
     "recommended_ram_gb": 7.1,
     "min_vram_gb": 3.9,
-    "quantization": "Q4_K_M",
+    "quantization": "GPTQ-Int8",
     "context_length": 32768,
     "use_case": "Instruction following, chat",
     "capabilities": [
@@ -5476,7 +6030,8 @@
     "hf_downloads": 30708,
     "hf_likes": 18,
     "release_date": "2024-09-17",
-    "_discovered": true
+    "_discovered": true,
+    "format": "gptq"
   },
   {
     "name": "microsoft/Phi-mini-MoE-instruct",
@@ -5950,7 +6505,7 @@
     "min_ram_gb": 4.5,
     "recommended_ram_gb": 7.5,
     "min_vram_gb": 4.1,
-    "quantization": "Q4_K_M",
+    "quantization": "GPTQ-Int4",
     "context_length": 131072,
     "use_case": "Instruction following, chat",
     "capabilities": [
@@ -5961,7 +6516,8 @@
     "hf_downloads": 27054,
     "hf_likes": 41,
     "release_date": "2024-07-24",
-    "_discovered": true
+    "_discovered": true,
+    "format": "gptq"
   },
   {
     "name": "RedHatAI/Meta-Llama-3.1-8B-Instruct-FP8-dynamic",
@@ -6038,7 +6594,7 @@
     "min_ram_gb": 4.6,
     "recommended_ram_gb": 7.6,
     "min_vram_gb": 4.2,
-    "quantization": "Q4_K_M",
+    "quantization": "AWQ-4bit",
     "context_length": 40960,
     "use_case": "General purpose text generation",
     "capabilities": [
@@ -6049,7 +6605,8 @@
     "hf_downloads": 327827,
     "hf_likes": 37,
     "release_date": "2025-05-03",
-    "_discovered": true
+    "_discovered": true,
+    "format": "awq"
   },
   {
     "name": "deepseek-ai/DeepSeek-R1-0528-Qwen3-8B",
@@ -6526,7 +7083,7 @@
     "min_ram_gb": 5.7,
     "recommended_ram_gb": 9.5,
     "min_vram_gb": 5.2,
-    "quantization": "Q4_K_M",
+    "quantization": "AWQ-4bit",
     "context_length": 8192,
     "use_case": "General purpose text generation",
     "capabilities": [],
@@ -6535,7 +7092,8 @@
     "hf_downloads": 32664,
     "hf_likes": 2,
     "release_date": "2024-09-03",
-    "_discovered": true
+    "_discovered": true,
+    "format": "awq"
   },
   {
     "name": "meta-llama/Llama-3.2-11B-Vision-Instruct",
@@ -6705,7 +7263,7 @@
     "min_ram_gb": 6.8,
     "recommended_ram_gb": 11.4,
     "min_vram_gb": 6.3,
-    "quantization": "Q4_K_M",
+    "quantization": "AWQ-4bit",
     "context_length": 1024000,
     "use_case": "Instruction following, chat",
     "capabilities": [
@@ -6716,7 +7274,8 @@
     "hf_downloads": 189490,
     "hf_likes": 12,
     "release_date": "2024-07-23",
-    "_discovered": true
+    "_discovered": true,
+    "format": "awq"
   },
   {
     "name": "m8than/Mistral-Nemo-Instruct-2407-lenient-chatfix",
@@ -6984,7 +7543,7 @@
     "min_ram_gb": 8.1,
     "recommended_ram_gb": 13.5,
     "min_vram_gb": 7.4,
-    "quantization": "Q4_K_M",
+    "quantization": "AWQ-4bit",
     "context_length": 262144,
     "use_case": "Code generation and completion",
     "capabilities": [
@@ -6999,7 +7558,8 @@
     "num_experts": 512,
     "active_experts": 10,
     "active_parameters": 990253467,
-    "_discovered": true
+    "_discovered": true,
+    "format": "awq"
   },
   {
     "name": "stelterlab/phi-4-AWQ",
@@ -7009,7 +7569,7 @@
     "min_ram_gb": 8.2,
     "recommended_ram_gb": 13.7,
     "min_vram_gb": 7.5,
-    "quantization": "Q4_K_M",
+    "quantization": "AWQ-4bit",
     "context_length": 16384,
     "use_case": "General purpose text generation",
     "capabilities": [],
@@ -7018,7 +7578,8 @@
     "hf_downloads": 55064,
     "hf_likes": 4,
     "release_date": "2025-01-11",
-    "_discovered": true
+    "_discovered": true,
+    "format": "awq"
   },
   {
     "name": "cyankiwi/Qwen3-Next-80B-A3B-Instruct-AWQ-4bit",
@@ -7028,7 +7589,7 @@
     "min_ram_gb": 8.2,
     "recommended_ram_gb": 13.7,
     "min_vram_gb": 7.5,
-    "quantization": "Q4_K_M",
+    "quantization": "AWQ-4bit",
     "context_length": 262144,
     "use_case": "Instruction following, chat",
     "capabilities": [
@@ -7043,7 +7604,8 @@
     "num_experts": 512,
     "active_experts": 10,
     "active_parameters": 1010238527,
-    "_discovered": true
+    "_discovered": true,
+    "format": "awq"
   },
   {
     "name": "cyankiwi/Qwen3-Next-80B-A3B-Thinking-AWQ-4bit",
@@ -7053,7 +7615,7 @@
     "min_ram_gb": 8.2,
     "recommended_ram_gb": 13.7,
     "min_vram_gb": 7.5,
-    "quantization": "Q4_K_M",
+    "quantization": "AWQ-4bit",
     "context_length": 262144,
     "use_case": "General purpose text generation",
     "capabilities": [
@@ -7068,7 +7630,8 @@
     "num_experts": 512,
     "active_experts": 10,
     "active_parameters": 1010238527,
-    "_discovered": true
+    "_discovered": true,
+    "format": "awq"
   },
   {
     "name": "Qwen/Qwen3-14B-AWQ",
@@ -7078,7 +7641,7 @@
     "min_ram_gb": 8.3,
     "recommended_ram_gb": 13.8,
     "min_vram_gb": 7.6,
-    "quantization": "Q4_K_M",
+    "quantization": "AWQ-4bit",
     "context_length": 40960,
     "use_case": "General purpose text generation",
     "capabilities": [
@@ -7089,7 +7652,8 @@
     "hf_downloads": 258163,
     "hf_likes": 57,
     "release_date": "2025-05-01",
-    "_discovered": true
+    "_discovered": true,
+    "format": "awq"
   },
   {
     "name": "OpenPipe/Qwen3-14B-Instruct",
@@ -7238,7 +7802,7 @@
     "min_ram_gb": 8.3,
     "recommended_ram_gb": 13.8,
     "min_vram_gb": 7.6,
-    "quantization": "Q4_K_M",
+    "quantization": "AWQ-4bit",
     "context_length": 32768,
     "use_case": "Instruction following, chat",
     "capabilities": [
@@ -7249,7 +7813,8 @@
     "hf_downloads": 1077036,
     "hf_likes": 27,
     "release_date": "2024-09-17",
-    "_discovered": true
+    "_discovered": true,
+    "format": "awq"
   },
   {
     "name": "deepseek-ai/DeepSeek-R1-Distill-Qwen-14B",
@@ -7288,7 +7853,7 @@
     "min_ram_gb": 8.3,
     "recommended_ram_gb": 13.8,
     "min_vram_gb": 7.6,
-    "quantization": "Q4_K_M",
+    "quantization": "AWQ-4bit",
     "context_length": 32768,
     "use_case": "Code generation and completion",
     "capabilities": [
@@ -7299,7 +7864,8 @@
     "hf_downloads": 168345,
     "hf_likes": 16,
     "release_date": "2024-11-09",
-    "_discovered": true
+    "_discovered": true,
+    "format": "awq"
   },
   {
     "name": "Qwen/Qwen2.5-14B",
@@ -7330,7 +7896,7 @@
     "min_ram_gb": 8.3,
     "recommended_ram_gb": 13.8,
     "min_vram_gb": 7.6,
-    "quantization": "Q4_K_M",
+    "quantization": "GPTQ-Int4",
     "context_length": 32768,
     "use_case": "Instruction following, chat",
     "capabilities": [
@@ -7341,7 +7907,8 @@
     "hf_downloads": 93325,
     "hf_likes": 26,
     "release_date": "2024-09-17",
-    "_discovered": true
+    "_discovered": true,
+    "format": "gptq"
   },
   {
     "name": "Qwen/Qwen2.5-14B-Instruct-1M",
@@ -7397,7 +7964,7 @@
     "min_ram_gb": 8.3,
     "recommended_ram_gb": 13.8,
     "min_vram_gb": 7.6,
-    "quantization": "Q4_K_M",
+    "quantization": "GPTQ-Int8",
     "context_length": 32768,
     "use_case": "Instruction following, chat",
     "capabilities": [
@@ -7408,7 +7975,8 @@
     "hf_downloads": 37961,
     "hf_likes": 21,
     "release_date": "2024-09-17",
-    "_discovered": true
+    "_discovered": true,
+    "format": "gptq"
   },
   {
     "name": "Qwen/Qwen2.5-Coder-14B",
@@ -7775,7 +8343,7 @@
     "min_ram_gb": 10.4,
     "recommended_ram_gb": 17.3,
     "min_vram_gb": 9.5,
-    "quantization": "Q4_K_M",
+    "quantization": "AWQ-4bit",
     "context_length": 131072,
     "use_case": "General purpose text generation",
     "capabilities": [],
@@ -7784,7 +8352,8 @@
     "hf_downloads": 260177,
     "hf_likes": 27,
     "release_date": "2025-07-29",
-    "_discovered": true
+    "_discovered": true,
+    "format": "awq"
   },
   {
     "name": "QuantTrio/GLM-4.5-Air-GPTQ-Int4-Int8Mix",
@@ -7794,7 +8363,7 @@
     "min_ram_gb": 11.1,
     "recommended_ram_gb": 18.4,
     "min_vram_gb": 10.1,
-    "quantization": "Q4_K_M",
+    "quantization": "GPTQ-Int4",
     "context_length": 131072,
     "use_case": "General purpose text generation",
     "capabilities": [],
@@ -7803,7 +8372,8 @@
     "hf_downloads": 24759,
     "hf_likes": 10,
     "release_date": "2025-07-30",
-    "_discovered": true
+    "_discovered": true,
+    "format": "gptq"
   },
   {
     "name": "internlm/internlm2-chat-20b",
@@ -7947,7 +8517,7 @@
     "min_ram_gb": 12.4,
     "recommended_ram_gb": 20.7,
     "min_vram_gb": 11.4,
-    "quantization": "Q4_K_M",
+    "quantization": "AWQ-4bit",
     "context_length": 32768,
     "use_case": "Code generation and completion",
     "capabilities": [],
@@ -7956,7 +8526,8 @@
     "hf_downloads": 84893,
     "hf_likes": 2,
     "release_date": "2024-05-30",
-    "_discovered": true
+    "_discovered": true,
+    "format": "awq"
   },
   {
     "name": "stelterlab/Mistral-Small-24B-Instruct-2501-AWQ",
@@ -7966,7 +8537,7 @@
     "min_ram_gb": 13.2,
     "recommended_ram_gb": 22.0,
     "min_vram_gb": 12.1,
-    "quantization": "Q4_K_M",
+    "quantization": "AWQ-4bit",
     "context_length": 32768,
     "use_case": "Instruction following, chat",
     "capabilities": [
@@ -7977,7 +8548,8 @@
     "hf_downloads": 266172,
     "hf_likes": 26,
     "release_date": "2025-01-30",
-    "_discovered": true
+    "_discovered": true,
+    "format": "awq"
   },
   {
     "name": "lmstudio-community/Devstral-Small-2507-MLX-8bit",
@@ -8089,6 +8661,27 @@
     "active_experts": 4,
     "active_parameters": 2607900202,
     "_discovered": true
+  },
+  {
+    "name": "LiquidAI/LFM2-24B-A2B",
+    "provider": "Liquid AI",
+    "parameter_count": "23.8B",
+    "parameters_raw": 23843661440,
+    "min_ram_gb": 13.3,
+    "recommended_ram_gb": 22.2,
+    "min_vram_gb": 12.2,
+    "quantization": "Q4_K_M",
+    "context_length": 128000,
+    "use_case": "Agentic tasks, RAG, summarization",
+    "pipeline_tag": "text-generation",
+    "architecture": "lfm2",
+    "is_moe": true,
+    "num_experts": 32,
+    "active_experts": 4,
+    "active_parameters": 2300000000,
+    "hf_downloads": 0,
+    "hf_likes": 0,
+    "release_date": "2025-11-28"
   },
   {
     "name": "mistralai/Mistral-Small-24B-Instruct-2501",
@@ -8240,7 +8833,7 @@
     "min_ram_gb": 17.1,
     "recommended_ram_gb": 28.4,
     "min_vram_gb": 15.6,
-    "quantization": "Q4_K_M",
+    "quantization": "GPTQ-Int4",
     "context_length": 40960,
     "use_case": "General purpose text generation",
     "capabilities": [
@@ -8255,7 +8848,8 @@
     "num_experts": 128,
     "active_experts": 8,
     "active_parameters": 3339450907,
-    "_discovered": true
+    "_discovered": true,
+    "format": "gptq"
   },
   {
     "name": "lmstudio-community/Qwen3-Coder-30B-A3B-Instruct-MLX-4bit",
@@ -8415,7 +9009,7 @@
     "min_ram_gb": 17.1,
     "recommended_ram_gb": 28.4,
     "min_vram_gb": 15.6,
-    "quantization": "Q4_K_M",
+    "quantization": "AWQ-4bit",
     "context_length": 262144,
     "use_case": "Code generation and completion",
     "capabilities": [
@@ -8430,7 +9024,8 @@
     "num_experts": 128,
     "active_experts": 8,
     "active_parameters": 3339450907,
-    "_discovered": true
+    "_discovered": true,
+    "format": "awq"
   },
   {
     "name": "lmstudio-community/Qwen3-30B-A3B-Instruct-2507-MLX-4bit",
@@ -8588,7 +9183,7 @@
     "min_ram_gb": 17.4,
     "recommended_ram_gb": 28.9,
     "min_vram_gb": 15.9,
-    "quantization": "Q4_K_M",
+    "quantization": "AWQ-4bit",
     "context_length": 262144,
     "use_case": "Instruction following, chat",
     "capabilities": [
@@ -8604,7 +9199,8 @@
     "num_experts": 256,
     "active_experts": 8,
     "active_parameters": 2475950709,
-    "_discovered": true
+    "_discovered": true,
+    "format": "awq"
   },
   {
     "name": "QuantTrio/GLM-4.7-Flash-AWQ",
@@ -8614,7 +9210,7 @@
     "min_ram_gb": 17.4,
     "recommended_ram_gb": 29.1,
     "min_vram_gb": 16.0,
-    "quantization": "Q4_K_M",
+    "quantization": "AWQ-4bit",
     "context_length": 202752,
     "use_case": "General purpose text generation",
     "capabilities": [],
@@ -8623,7 +9219,8 @@
     "hf_downloads": 103703,
     "hf_likes": 7,
     "release_date": "2026-01-21",
-    "_discovered": true
+    "_discovered": true,
+    "format": "awq"
   },
   {
     "name": "lmstudio-community/NVIDIA-Nemotron-3-Nano-30B-A3B-MLX-4bit",
@@ -8930,7 +9527,7 @@
     "min_ram_gb": 18.3,
     "recommended_ram_gb": 30.5,
     "min_vram_gb": 16.8,
-    "quantization": "Q4_K_M",
+    "quantization": "AWQ-4bit",
     "context_length": 40960,
     "use_case": "General purpose text generation",
     "capabilities": [
@@ -8941,7 +9538,8 @@
     "hf_downloads": 552811,
     "hf_likes": 129,
     "release_date": "2025-05-01",
-    "_discovered": true
+    "_discovered": true,
+    "format": "awq"
   },
   {
     "name": "Qwen/Qwen2.5-Coder-32B-Instruct",
@@ -9009,7 +9607,7 @@
     "min_ram_gb": 18.3,
     "recommended_ram_gb": 30.5,
     "min_vram_gb": 16.8,
-    "quantization": "Q4_K_M",
+    "quantization": "AWQ-4bit",
     "context_length": 32768,
     "use_case": "Instruction following, chat",
     "capabilities": [
@@ -9020,7 +9618,8 @@
     "hf_downloads": 1643600,
     "hf_likes": 94,
     "release_date": "2024-09-17",
-    "_discovered": true
+    "_discovered": true,
+    "format": "awq"
   },
   {
     "name": "Qwen/Qwen2.5-32B",
@@ -9051,7 +9650,7 @@
     "min_ram_gb": 18.3,
     "recommended_ram_gb": 30.5,
     "min_vram_gb": 16.8,
-    "quantization": "Q4_K_M",
+    "quantization": "AWQ-4bit",
     "context_length": 32768,
     "use_case": "Code generation and completion",
     "capabilities": [
@@ -9062,7 +9661,8 @@
     "hf_downloads": 973260,
     "hf_likes": 33,
     "release_date": "2024-11-09",
-    "_discovered": true
+    "_discovered": true,
+    "format": "awq"
   },
   {
     "name": "Qwen/QwQ-32B-AWQ",
@@ -9072,7 +9672,7 @@
     "min_ram_gb": 18.3,
     "recommended_ram_gb": 30.5,
     "min_vram_gb": 16.8,
-    "quantization": "Q4_K_M",
+    "quantization": "AWQ-4bit",
     "context_length": 40960,
     "use_case": "General purpose text generation",
     "capabilities": [],
@@ -9081,7 +9681,8 @@
     "hf_downloads": 280279,
     "hf_likes": 133,
     "release_date": "2025-03-05",
-    "_discovered": true
+    "_discovered": true,
+    "format": "awq"
   },
   {
     "name": "Qwen/Qwen2.5-32B-Instruct-GPTQ-Int4",
@@ -9091,7 +9692,7 @@
     "min_ram_gb": 18.3,
     "recommended_ram_gb": 30.5,
     "min_vram_gb": 16.8,
-    "quantization": "Q4_K_M",
+    "quantization": "GPTQ-Int4",
     "context_length": 32768,
     "use_case": "Instruction following, chat",
     "capabilities": [
@@ -9102,7 +9703,8 @@
     "hf_downloads": 191251,
     "hf_likes": 40,
     "release_date": "2024-09-17",
-    "_discovered": true
+    "_discovered": true,
+    "format": "gptq"
   },
   {
     "name": "baichuan-inc/Baichuan-M2-32B",
@@ -9131,7 +9733,7 @@
     "min_ram_gb": 18.3,
     "recommended_ram_gb": 30.5,
     "min_vram_gb": 16.8,
-    "quantization": "Q4_K_M",
+    "quantization": "GPTQ-Int8",
     "context_length": 32768,
     "use_case": "Instruction following, chat",
     "capabilities": [
@@ -9142,7 +9744,8 @@
     "hf_downloads": 105034,
     "hf_likes": 14,
     "release_date": "2024-09-17",
-    "_discovered": true
+    "_discovered": true,
+    "format": "gptq"
   },
   {
     "name": "Qwen/Qwen2.5-Coder-32B",
@@ -9371,7 +9974,7 @@
     "min_ram_gb": 20.6,
     "recommended_ram_gb": 34.3,
     "min_vram_gb": 18.9,
-    "quantization": "Q4_K_M",
+    "quantization": "AWQ-4bit",
     "context_length": 196608,
     "use_case": "Lightweight, edge deployment",
     "capabilities": [],
@@ -9384,7 +9987,8 @@
     "num_experts": 256,
     "active_experts": 8,
     "active_parameters": 2933443495,
-    "_discovered": true
+    "_discovered": true,
+    "format": "awq"
   },
   {
     "name": "cyankiwi/MiniMax-M2.5-AWQ-4bit",
@@ -9394,7 +9998,7 @@
     "min_ram_gb": 20.6,
     "recommended_ram_gb": 34.3,
     "min_vram_gb": 18.9,
-    "quantization": "Q4_K_M",
+    "quantization": "AWQ-4bit",
     "context_length": 196608,
     "use_case": "Lightweight, edge deployment",
     "capabilities": [],
@@ -9407,7 +10011,8 @@
     "num_experts": 256,
     "active_experts": 8,
     "active_parameters": 2933443495,
-    "_discovered": true
+    "_discovered": true,
+    "format": "awq"
   },
   {
     "name": "mratsim/MiniMax-M2.5-BF16-INT4-AWQ",
@@ -9417,7 +10022,7 @@
     "min_ram_gb": 21.9,
     "recommended_ram_gb": 36.4,
     "min_vram_gb": 20.0,
-    "quantization": "Q4_K_M",
+    "quantization": "AWQ-4bit",
     "context_length": 196608,
     "use_case": "Lightweight, edge deployment",
     "capabilities": [],
@@ -9430,7 +10035,8 @@
     "num_experts": 256,
     "active_experts": 8,
     "active_parameters": 3117031705,
-    "_discovered": true
+    "_discovered": true,
+    "format": "awq"
   },
   {
     "name": "tiiuae/falcon-40b-instruct",
@@ -9675,7 +10281,7 @@
     "min_ram_gb": 39.4,
     "recommended_ram_gb": 65.7,
     "min_vram_gb": 36.1,
-    "quantization": "Q4_K_M",
+    "quantization": "AWQ-4bit",
     "context_length": 131072,
     "use_case": "Instruction following, chat",
     "capabilities": [
@@ -9686,7 +10292,8 @@
     "hf_downloads": 674865,
     "hf_likes": 39,
     "release_date": "2024-12-06",
-    "_discovered": true
+    "_discovered": true,
+    "format": "awq"
   },
   {
     "name": "kosbu/Llama-3.3-70B-Instruct-AWQ",
@@ -9696,7 +10303,7 @@
     "min_ram_gb": 39.4,
     "recommended_ram_gb": 65.7,
     "min_vram_gb": 36.1,
-    "quantization": "Q4_K_M",
+    "quantization": "AWQ-4bit",
     "context_length": 131072,
     "use_case": "Instruction following, chat",
     "capabilities": [
@@ -9707,7 +10314,8 @@
     "hf_downloads": 505688,
     "hf_likes": 10,
     "release_date": "2024-12-06",
-    "_discovered": true
+    "_discovered": true,
+    "format": "awq"
   },
   {
     "name": "ibnzterrell/Meta-Llama-3.3-70B-Instruct-AWQ-INT4",
@@ -9717,7 +10325,7 @@
     "min_ram_gb": 39.4,
     "recommended_ram_gb": 65.7,
     "min_vram_gb": 36.1,
-    "quantization": "Q4_K_M",
+    "quantization": "AWQ-4bit",
     "context_length": 131072,
     "use_case": "Instruction following, chat",
     "capabilities": [
@@ -9728,7 +10336,8 @@
     "hf_downloads": 138353,
     "hf_likes": 30,
     "release_date": "2024-12-07",
-    "_discovered": true
+    "_discovered": true,
+    "format": "awq"
   },
   {
     "name": "RedHatAI/Meta-Llama-3.1-70B-Instruct-quantized.w4a16",
@@ -10018,7 +10627,7 @@
     "min_ram_gb": 40.8,
     "recommended_ram_gb": 67.9,
     "min_vram_gb": 37.4,
-    "quantization": "Q4_K_M",
+    "quantization": "AWQ-4bit",
     "context_length": 32768,
     "use_case": "Instruction following, chat",
     "capabilities": [
@@ -10029,7 +10638,8 @@
     "hf_downloads": 922364,
     "hf_likes": 75,
     "release_date": "2024-09-17",
-    "_discovered": true
+    "_discovered": true,
+    "format": "awq"
   },
   {
     "name": "Qwen/Qwen2.5-72B-Instruct-GPTQ-Int8",
@@ -10039,7 +10649,7 @@
     "min_ram_gb": 40.8,
     "recommended_ram_gb": 67.9,
     "min_vram_gb": 37.4,
-    "quantization": "Q4_K_M",
+    "quantization": "GPTQ-Int8",
     "context_length": 32768,
     "use_case": "Instruction following, chat",
     "capabilities": [
@@ -10050,7 +10660,8 @@
     "hf_downloads": 42593,
     "hf_likes": 28,
     "release_date": "2024-09-17",
-    "_discovered": true
+    "_discovered": true,
+    "format": "gptq"
   },
   {
     "name": "NexVeridian/Qwen3-Coder-Next-8bit",
@@ -10178,6 +10789,24 @@
     "_discovered": true
   },
   {
+    "name": "Qwen/Qwen3-Coder-Next",
+    "provider": "Alibaba",
+    "parameter_count": "79.7B",
+    "parameters_raw": 79674391296,
+    "min_ram_gb": 44.5,
+    "recommended_ram_gb": 74.2,
+    "min_vram_gb": 40.8,
+    "quantization": "Q4_K_M",
+    "context_length": 262144,
+    "use_case": "Code generation and completion",
+    "pipeline_tag": "text-generation",
+    "architecture": "qwen3_next",
+    "hf_downloads": 484455,
+    "hf_likes": 976,
+    "release_date": "2026-01-30",
+    "_discovered": true
+  },
+  {
     "name": "Qwen/Qwen3-Coder-Next-FP8",
     "provider": "Alibaba",
     "parameter_count": "79.7B",
@@ -10293,7 +10922,7 @@
     "min_ram_gb": 62.1,
     "recommended_ram_gb": 103.6,
     "min_vram_gb": 57.0,
-    "quantization": "Q4_K_M",
+    "quantization": "AWQ-4bit",
     "context_length": 32768,
     "use_case": "Instruction following, chat",
     "capabilities": [],
@@ -10302,7 +10931,8 @@
     "hf_downloads": 320397,
     "hf_likes": 9,
     "release_date": "2024-04-27",
-    "_discovered": true
+    "_discovered": true,
+    "format": "awq"
   },
   {
     "name": "lmstudio-community/gpt-oss-120b-MLX-8bit",
@@ -10442,7 +11072,7 @@
     "min_ram_gb": 78.6,
     "recommended_ram_gb": 131.0,
     "min_vram_gb": 72.0,
-    "quantization": "Q4_K_M",
+    "quantization": "AWQ-4bit",
     "context_length": 65536,
     "use_case": "Instruction following, chat",
     "capabilities": [],
@@ -10455,7 +11085,8 @@
     "num_experts": 8,
     "active_experts": 2,
     "active_parameters": 40431145496,
-    "_discovered": true
+    "_discovered": true,
+    "format": "awq"
   },
   {
     "name": "rednote-hilab/dots.llm1.inst",
@@ -10636,7 +11267,7 @@
     "min_ram_gb": 127.8,
     "recommended_ram_gb": 213.0,
     "min_vram_gb": 117.1,
-    "quantization": "Q4_K_M",
+    "quantization": "AWQ-4bit",
     "context_length": 196608,
     "use_case": "Lightweight, edge deployment",
     "capabilities": [],
@@ -10649,7 +11280,8 @@
     "num_experts": 256,
     "active_experts": 8,
     "active_parameters": 18223715635,
-    "_discovered": true
+    "_discovered": true,
+    "format": "awq"
   },
   {
     "name": "QuantTrio/MiniMax-M2.5-AWQ",
@@ -10659,7 +11291,7 @@
     "min_ram_gb": 127.8,
     "recommended_ram_gb": 213.0,
     "min_vram_gb": 117.1,
-    "quantization": "Q4_K_M",
+    "quantization": "AWQ-4bit",
     "context_length": 196608,
     "use_case": "Lightweight, edge deployment",
     "capabilities": [],
@@ -10672,7 +11304,8 @@
     "num_experts": 256,
     "active_experts": 8,
     "active_parameters": 18223715635,
-    "_discovered": true
+    "_discovered": true,
+    "format": "awq"
   },
   {
     "name": "MiniMaxAI/MiniMax-M2.5",
@@ -10873,7 +11506,7 @@
     "min_ram_gb": 131.7,
     "recommended_ram_gb": 219.6,
     "min_vram_gb": 120.8,
-    "quantization": "Q4_K_M",
+    "quantization": "AWQ-4bit",
     "context_length": 163840,
     "use_case": "Code generation and completion",
     "capabilities": [],
@@ -10886,7 +11519,8 @@
     "num_experts": 64,
     "active_experts": 6,
     "active_parameters": 32782793288,
-    "_discovered": true
+    "_discovered": true,
+    "format": "awq"
   },
   {
     "name": "deepseek-ai/DeepSeek-V2.5",
@@ -11427,7 +12061,7 @@
     "min_ram_gb": 382.8,
     "recommended_ram_gb": 638.0,
     "min_vram_gb": 350.9,
-    "quantization": "Q4_K_M",
+    "quantization": "AWQ-4bit",
     "context_length": 163840,
     "use_case": "General purpose text generation",
     "capabilities": [],
@@ -11436,7 +12070,8 @@
     "hf_downloads": 103286,
     "hf_likes": 11,
     "release_date": "2025-12-03",
-    "_discovered": true
+    "_discovered": true,
+    "format": "awq"
   },
   {
     "name": "deepseek-ai/DeepSeek-V3.2",

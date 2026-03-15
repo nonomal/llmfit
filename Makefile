@@ -1,7 +1,7 @@
 # Makefile for llmfit
 # Convenience commands for building, testing, and updating the model database
 
-.PHONY: help build release clean run test update-models check fmt clippy install
+.PHONY: help build release clean run test update-models update-docker-models update-catalogs check fmt clippy install
 
 # Default target
 help:
@@ -13,6 +13,8 @@ help:
 	@echo "  make run            - Run in TUI mode (debug)"
 	@echo "  make test           - Run all unit tests"
 	@echo "  make update-models  - Fetch latest model data from HuggingFace"
+	@echo "  make update-docker-models - Refresh Docker Model Runner catalog"
+	@echo "  make update-catalogs - Refresh all catalogs (HF models + Docker) and rebuild"
 	@echo "  make check          - Run cargo check"
 	@echo "  make fmt            - Format code with rustfmt"
 	@echo "  make clippy         - Run clippy linter"
@@ -43,6 +45,19 @@ test:
 # Update model database from HuggingFace
 update-models:
 	@./scripts/update_models.sh
+
+# Refresh Docker Model Runner catalog from Docker Hub
+update-docker-models:
+	python3 scripts/scrape_docker_models.py
+
+# Refresh all catalogs (HF models + Docker) and rebuild
+# Runs HF scraper first (via update_models.sh which also rebuilds),
+# then Docker scraper (which depends on hf_models.json), then rebuilds again
+# to embed the updated Docker catalog.
+update-catalogs:
+	@./scripts/update_models.sh
+	python3 scripts/scrape_docker_models.py
+	cargo build --release
 
 # Check compilation without building
 check:
