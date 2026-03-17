@@ -799,7 +799,7 @@ def enrich_gguf_sources(models: list[dict]) -> int:
 # ---------------------------------------------------------------------------
 
 # Pipeline tags to search for discoverable models
-DISCOVER_PIPELINES = ["text-generation", "text2text-generation"]
+DISCOVER_PIPELINES = ["text-generation", "image-text-to-text"]
 
 # Orgs to skip — these publish many fine-tunes that clutter the list
 SKIP_ORGS = {
