@@ -685,7 +685,7 @@ Agent 会在后台调用 `llmfit recommend --json`，解读结果，并提议用
 
 ## 许可证
 
-本项目采用 [MIT 许可证](LICENSE)。
+MIT
 
 ---
 
