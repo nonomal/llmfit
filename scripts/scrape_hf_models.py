@@ -506,7 +506,7 @@ def extract_provider(repo_id: str) -> str:
     return mapping.get(org, org)
 
 
-def infer_capabilities(repo_id: str, pipeline_tag: str | None, use_case: str) -> list[str]:
+def infer_capabilities(repo_id: str, pipeline_tag: str | None, use_case: str, config: dict | None = None) -> list[str]:
     """Infer model capabilities like vision and tool use."""
     caps: list[str] = []
     rid = repo_id.lower()
@@ -526,17 +526,15 @@ def infer_capabilities(repo_id: str, pipeline_tag: str | None, use_case: str) ->
     ):
         caps.append("vision")
 
-    # Tool use (known families)
-    if (
-        "tool" in uc
-        or "function call" in uc
-        or "qwen3" in rid
-        or "qwen2.5" in rid
-        or "command-r" in rid
-        or ("llama-3" in rid and "instruct" in rid)
-        or ("mistral" in rid and "instruct" in rid)
-        or "hermes" in rid
-    ):
+    # Tool use — check chat_template for "tools" mention
+    chat_template = None
+    if config:
+        chat_template = (
+            config.get("chat_template_jinja")
+            or (config.get("processor_config") or {}).get("chat_template")
+            or (config.get("tokenizer_config") or {}).get("chat_template")
+        )
+    if chat_template and "tools" in chat_template:
         caps.append("tool_use")
 
     return caps
@@ -621,7 +619,11 @@ def scrape_model(repo_id: str) -> dict | None:
     if not total_params:
         params_by_dtype = safetensors.get("parameters", {})
         if params_by_dtype:
-            total_params = max(params_by_dtype.values())
+            total_params = sum(params_by_dtype.values())
+
+    if not total_params:
+        gguf = info.get("gguf", {})
+        total_params = gguf.get("total")
 
     if not total_params:
         print(f"  ⚠ No parameter count found for {repo_id}", file=sys.stderr)
@@ -647,6 +649,9 @@ def scrape_model(repo_id: str) -> dict | None:
 
     use_case_str = infer_use_case(repo_id, pipeline_tag, config)
 
+    license = (info.get("cardData") or {}).get("license")
+    license = license[0] if isinstance(license, list) else license if isinstance(license, str) else None
+
     result = {
         "name": repo_id,
         "provider": extract_provider(repo_id),
@@ -659,12 +664,13 @@ def scrape_model(repo_id: str) -> dict | None:
         "format": model_format,
         "context_length": context_length,
         "use_case": use_case_str,
-        "capabilities": infer_capabilities(repo_id, pipeline_tag, use_case_str),
+        "capabilities": infer_capabilities(repo_id, pipeline_tag, use_case_str, config),
         "pipeline_tag": pipeline_tag or "unknown",
         "architecture": architecture,
         "hf_downloads": info.get("downloads", 0),
         "hf_likes": info.get("likes", 0),
         "release_date": (info.get("createdAt") or "")[:10] or None,
+        "license": license,
     }
 
     # Add MoE fields if detected
@@ -801,7 +807,7 @@ def enrich_gguf_sources(models: list[dict]) -> int:
 # ---------------------------------------------------------------------------
 
 # Pipeline tags to search for discoverable models
-DISCOVER_PIPELINES = ["text-generation", "text2text-generation"]
+DISCOVER_PIPELINES = ["text-generation", "text2text-generation", "image-text-to-text"]
 
 # Orgs to skip — these publish many fine-tunes that clutter the list
 SKIP_ORGS = {
