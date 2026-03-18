@@ -647,6 +647,9 @@ def scrape_model(repo_id: str) -> dict | None:
 
     use_case_str = infer_use_case(repo_id, pipeline_tag, config)
 
+    license = (info.get("cardData") or {}).get("license")
+    license = license[0] if isinstance(license, list) else license if isinstance(license, str) else None
+
     result = {
         "name": repo_id,
         "provider": extract_provider(repo_id),
@@ -665,7 +668,7 @@ def scrape_model(repo_id: str) -> dict | None:
         "hf_downloads": info.get("downloads", 0),
         "hf_likes": info.get("likes", 0),
         "release_date": (info.get("createdAt") or "")[:10] or None,
-        "license": l[0] if isinstance(l := (info.get("cardData") or {}).get("license"), list) else l,
+        "license": license,
     }
 
     # Add MoE fields if detected
