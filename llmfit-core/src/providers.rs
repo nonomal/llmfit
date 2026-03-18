@@ -1,4 +1,4 @@
-//! Runtime model providers (Ollama, llama.cpp, MLX).
+//! Runtime model providers (Ollama, llama.cpp, MLX, Docker Model Runner, LM Studio).
 //!
 //! Each provider can list locally installed models and pull new ones.
 //! The trait is designed to be extended for vLLM, etc.
@@ -101,7 +101,7 @@ impl OllamaProvider {
 
     /// Single-pass startup probe to avoid duplicate `/api/tags` calls.
     /// Returns `(available, installed_models)`.
-    pub fn detect_with_installed(&self) -> (bool, HashSet<String>) {
+    pub fn detect_with_installed(&self) -> (bool, HashSet<String>, usize) {
         let mut set = HashSet::new();
         let Ok(resp) = ureq::get(&self.api_url("tags"))
             .config()
@@ -109,12 +109,13 @@ impl OllamaProvider {
             .build()
             .call()
         else {
-            return (false, set);
+            return (false, set, 0);
         };
 
         let Ok(tags): Result<TagsResponse, _> = resp.into_body().read_json() else {
-            return (true, set);
+            return (true, set, 0);
         };
+        let count = tags.models.len();
         for m in tags.models {
             let lower = m.name.to_lowercase();
             set.insert(lower.clone());
@@ -122,7 +123,34 @@ impl OllamaProvider {
                 set.insert(family.to_string());
             }
         }
-        (true, set)
+        (true, set, count)
+    }
+
+    /// Like `installed_models`, but also returns the true model count.
+    /// The HashSet may have fewer entries than 2*count due to family-name deduplication,
+    /// so `len() / 2` is unreliable for counting models.
+    pub fn installed_models_counted(&self) -> (HashSet<String>, usize) {
+        let mut set = HashSet::new();
+        let Ok(resp) = ureq::get(&self.api_url("tags"))
+            .config()
+            .timeout_global(Some(std::time::Duration::from_secs(5)))
+            .build()
+            .call()
+        else {
+            return (set, 0);
+        };
+        let Ok(tags): Result<TagsResponse, _> = resp.into_body().read_json() else {
+            return (set, 0);
+        };
+        let count = tags.models.len();
+        for m in tags.models {
+            let lower = m.name.to_lowercase();
+            set.insert(lower.clone());
+            if let Some(family) = lower.split(':').next() {
+                set.insert(family.to_string());
+            }
+        }
+        (set, count)
     }
 
     /// Best-effort check that a tag exists in Ollama's remote registry.
@@ -178,27 +206,7 @@ impl ModelProvider for OllamaProvider {
     }
 
     fn installed_models(&self) -> HashSet<String> {
-        let mut set = HashSet::new();
-        let Ok(resp) = ureq::get(&self.api_url("tags"))
-            .config()
-            .timeout_global(Some(std::time::Duration::from_secs(5)))
-            .build()
-            .call()
-        else {
-            return set;
-        };
-        let Ok(tags): Result<TagsResponse, _> = resp.into_body().read_json() else {
-            return set;
-        };
-        for m in tags.models {
-            let lower = m.name.to_lowercase();
-            // Store the full tag as-is (lowercased)
-            set.insert(lower.clone());
-            // Also store just the family (before the colon) so fuzzy matching works
-            if let Some(family) = lower.split(':').next() {
-                set.insert(family.to_string());
-            }
-        }
+        let (set, _) = self.installed_models_counted();
         set
     }
 
@@ -538,6 +546,25 @@ impl Default for LlamaCppProvider {
 impl LlamaCppProvider {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Like `installed_models`, but also returns the true GGUF file count.
+    /// The HashSet may have fewer entries than 2*count due to deduplication
+    /// when stripping quantization suffixes, so `len() / 2` is unreliable.
+    pub fn installed_models_counted(&self) -> (HashSet<String>, usize) {
+        let mut set = HashSet::new();
+        let mut count = 0usize;
+        for path in self.list_gguf_files() {
+            if let Some(stem) = path.file_stem().and_then(|s| s.to_str()) {
+                count += 1;
+                let lower = stem.to_lowercase();
+                set.insert(lower.clone());
+                if let Some(base) = strip_gguf_quant_suffix(&lower) {
+                    set.insert(base);
+                }
+            }
+        }
+        (set, count)
     }
 
     /// Return the directory where GGUF models are cached.
@@ -936,18 +963,7 @@ impl ModelProvider for LlamaCppProvider {
     }
 
     fn installed_models(&self) -> HashSet<String> {
-        let mut set = HashSet::new();
-        for path in self.list_gguf_files() {
-            if let Some(stem) = path.file_stem().and_then(|s| s.to_str()) {
-                let lower = stem.to_lowercase();
-                set.insert(lower.clone());
-                // Also insert a normalized form: strip quantization suffix
-                // e.g. "llama-3.1-8b-instruct-q4_k_m" → "llama-3.1-8b-instruct"
-                if let Some(base) = strip_gguf_quant_suffix(&lower) {
-                    set.insert(base);
-                }
-            }
-        }
+        let (set, _) = self.installed_models_counted();
         set
     }
 
@@ -1002,6 +1018,623 @@ impl ModelProvider for LlamaCppProvider {
         let (filename, _) = &files[0];
         self.download_gguf(repo_id, filename)
     }
+}
+
+// ---------------------------------------------------------------------------
+// Docker Model Runner provider
+// ---------------------------------------------------------------------------
+
+/// Docker Model Runner — Docker Desktop's built-in model serving feature.
+///
+/// Exposes an OpenAI-compatible API at `http://localhost:12434` by default.
+/// Models are listed via `GET /engines` and pulled via `docker model pull`.
+pub struct DockerModelRunnerProvider {
+    base_url: String,
+}
+
+fn normalize_docker_mr_host(raw: &str) -> Option<String> {
+    let host = raw.trim();
+    if host.is_empty() {
+        return None;
+    }
+
+    if host.starts_with("http://") || host.starts_with("https://") {
+        return Some(host.to_string());
+    }
+
+    if host.contains("://") {
+        return None;
+    }
+
+    Some(format!("http://{host}"))
+}
+
+impl Default for DockerModelRunnerProvider {
+    fn default() -> Self {
+        let base_url = std::env::var("DOCKER_MODEL_RUNNER_HOST")
+            .ok()
+            .and_then(|raw| {
+                let normalized = normalize_docker_mr_host(&raw);
+                if normalized.is_none() {
+                    eprintln!(
+                        "Warning: could not parse DOCKER_MODEL_RUNNER_HOST='{}'. \
+                         Expected host:port or http(s)://host:port",
+                        raw
+                    );
+                }
+                normalized
+            })
+            .unwrap_or_else(|| "http://localhost:12434".to_string());
+        Self { base_url }
+    }
+}
+
+impl DockerModelRunnerProvider {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    fn models_url(&self) -> String {
+        format!("{}/v1/models", self.base_url.trim_end_matches('/'))
+    }
+
+    /// Single-pass startup probe.
+    /// Returns `(available, installed_models, count)`.
+    pub fn detect_with_installed(&self) -> (bool, HashSet<String>, usize) {
+        let mut set = HashSet::new();
+        let Ok(resp) = ureq::get(&self.models_url())
+            .config()
+            .timeout_global(Some(std::time::Duration::from_millis(800)))
+            .build()
+            .call()
+        else {
+            return (false, set, 0);
+        };
+
+        let Ok(list) = resp.into_body().read_json::<DockerModelList>() else {
+            return (true, set, 0);
+        };
+        let engines = list.data;
+        let count = engines.len();
+        for e in engines {
+            let lower = e.id.to_lowercase();
+            set.insert(lower.clone());
+            // Also insert the model part after the namespace (e.g. "ai/llama3.1" → "llama3.1")
+            if let Some(name) = lower.split('/').next_back() {
+                if name != lower {
+                    set.insert(name.to_string());
+                }
+            }
+            // Strip quantization tag if present (e.g. "llama3.1:8B-Q4_K_M" → "llama3.1:8b")
+            if let Some(base) = lower.split(':').next() {
+                set.insert(base.to_string());
+            }
+        }
+        (true, set, count)
+    }
+
+    pub fn installed_models_counted(&self) -> (HashSet<String>, usize) {
+        let (_, set, count) = self.detect_with_installed();
+        (set, count)
+    }
+}
+
+#[derive(serde::Deserialize)]
+struct DockerModelList {
+    data: Vec<DockerEngine>,
+}
+
+#[derive(serde::Deserialize)]
+struct DockerEngine {
+    /// Model ID, e.g. "ai/llama3.1:8B-Q4_K_M"
+    id: String,
+}
+
+impl ModelProvider for DockerModelRunnerProvider {
+    fn name(&self) -> &str {
+        "Docker Model Runner"
+    }
+
+    fn is_available(&self) -> bool {
+        ureq::get(&self.models_url())
+            .config()
+            .timeout_global(Some(std::time::Duration::from_secs(2)))
+            .build()
+            .call()
+            .is_ok()
+    }
+
+    fn installed_models(&self) -> HashSet<String> {
+        let (set, _) = self.installed_models_counted();
+        set
+    }
+
+    fn start_pull(&self, model_tag: &str) -> Result<PullHandle, String> {
+        let tag = model_tag.to_string();
+        let (tx, rx) = std::sync::mpsc::channel();
+
+        std::thread::spawn(move || {
+            let _ = tx.send(PullEvent::Progress {
+                status: format!("Pulling {} via docker model pull...", tag),
+                percent: None,
+            });
+
+            let result = std::process::Command::new("docker")
+                .args(["model", "pull", &tag])
+                .stdout(std::process::Stdio::piped())
+                .stderr(std::process::Stdio::piped())
+                .output();
+
+            match result {
+                Ok(output) if output.status.success() => {
+                    let _ = tx.send(PullEvent::Done);
+                }
+                Ok(output) => {
+                    let stderr = String::from_utf8_lossy(&output.stderr);
+                    let _ = tx.send(PullEvent::Error(format!(
+                        "docker model pull failed: {}",
+                        stderr.trim()
+                    )));
+                }
+                Err(e) => {
+                    let _ = tx.send(PullEvent::Error(format!("Failed to run docker: {e}")));
+                }
+            }
+        });
+
+        Ok(PullHandle {
+            model_tag: model_tag.to_string(),
+            receiver: rx,
+        })
+    }
+}
+
+// ---------------------------------------------------------------------------
+// LM Studio provider
+// ---------------------------------------------------------------------------
+
+/// LM Studio — local model server with REST API for model management.
+///
+/// Exposes an OpenAI-compatible API plus management endpoints at
+/// `http://127.0.0.1:1234` by default. Models are downloaded via
+/// `POST /api/v1/models/download` and listed via `GET /v1/models`.
+pub struct LmStudioProvider {
+    base_url: String,
+}
+
+fn normalize_lmstudio_host(raw: &str) -> Option<String> {
+    let host = raw.trim();
+    if host.is_empty() {
+        return None;
+    }
+
+    if host.starts_with("http://") || host.starts_with("https://") {
+        return Some(host.to_string());
+    }
+
+    if host.contains("://") {
+        return None;
+    }
+
+    Some(format!("http://{host}"))
+}
+
+impl Default for LmStudioProvider {
+    fn default() -> Self {
+        let base_url = std::env::var("LMSTUDIO_HOST")
+            .ok()
+            .and_then(|raw| {
+                let normalized = normalize_lmstudio_host(&raw);
+                if normalized.is_none() {
+                    eprintln!(
+                        "Warning: could not parse LMSTUDIO_HOST='{}'. \
+                         Expected host:port or http(s)://host:port",
+                        raw
+                    );
+                }
+                normalized
+            })
+            .unwrap_or_else(|| "http://127.0.0.1:1234".to_string());
+        Self { base_url }
+    }
+}
+
+impl LmStudioProvider {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    fn models_url(&self) -> String {
+        format!("{}/v1/models", self.base_url.trim_end_matches('/'))
+    }
+
+    fn download_url(&self) -> String {
+        format!(
+            "{}/api/v1/models/download",
+            self.base_url.trim_end_matches('/')
+        )
+    }
+
+    fn download_status_url(&self) -> String {
+        format!(
+            "{}/api/v1/models/download-status",
+            self.base_url.trim_end_matches('/')
+        )
+    }
+
+    /// Single-pass startup probe.
+    /// Returns `(available, installed_models, count)`.
+    pub fn detect_with_installed(&self) -> (bool, HashSet<String>, usize) {
+        let mut set = HashSet::new();
+        let Ok(resp) = ureq::get(&self.models_url())
+            .config()
+            .timeout_global(Some(std::time::Duration::from_millis(800)))
+            .build()
+            .call()
+        else {
+            return (false, set, 0);
+        };
+
+        let Ok(list) = resp.into_body().read_json::<LmStudioModelList>() else {
+            return (true, set, 0);
+        };
+        let models = list.models;
+        let count = models.len();
+        for m in models {
+            let lower = m.key.to_lowercase();
+            set.insert(lower.clone());
+            // Also insert the model part after the publisher (e.g. "lmstudio-community/Qwen3-1.7B-MLX-4bit" → "qwen3-1.7b-mlx-4bit")
+            if let Some(name) = lower.split('/').next_back() {
+                if name != lower {
+                    set.insert(name.to_string());
+                }
+            }
+        }
+        (true, set, count)
+    }
+
+    pub fn installed_models_counted(&self) -> (HashSet<String>, usize) {
+        let (_, set, count) = self.detect_with_installed();
+        (set, count)
+    }
+}
+
+#[derive(serde::Deserialize)]
+struct LmStudioModelList {
+    models: Vec<LmStudioModel>,
+}
+
+#[derive(serde::Deserialize)]
+struct LmStudioModel {
+    /// Model key, e.g. "lmstudio-community/Qwen3-1.7B-MLX-4bit"
+    key: String,
+}
+
+#[derive(serde::Deserialize)]
+struct LmStudioDownloadResponse {
+    #[serde(default)]
+    #[allow(dead_code)]
+    job_id: Option<String>,
+    #[serde(default)]
+    status: String,
+    #[serde(default)]
+    #[allow(dead_code)]
+    total_size_bytes: Option<u64>,
+}
+
+#[derive(serde::Deserialize)]
+struct LmStudioDownloadStatus {
+    #[serde(default)]
+    status: String,
+    #[serde(default)]
+    progress: Option<f64>,
+    #[serde(default)]
+    downloaded_bytes: Option<u64>,
+    #[serde(default)]
+    total_size_bytes: Option<u64>,
+}
+
+impl ModelProvider for LmStudioProvider {
+    fn name(&self) -> &str {
+        "LM Studio"
+    }
+
+    fn is_available(&self) -> bool {
+        ureq::get(&self.models_url())
+            .config()
+            .timeout_global(Some(std::time::Duration::from_secs(2)))
+            .build()
+            .call()
+            .is_ok()
+    }
+
+    fn installed_models(&self) -> HashSet<String> {
+        let (set, _) = self.installed_models_counted();
+        set
+    }
+
+    fn start_pull(&self, model_tag: &str) -> Result<PullHandle, String> {
+        let download_url = self.download_url();
+        let status_url = self.download_status_url();
+        let tag = model_tag.to_string();
+        let (tx, rx) = std::sync::mpsc::channel();
+
+        let body = serde_json::json!({
+            "model": tag,
+        });
+
+        std::thread::spawn(move || {
+            // Initiate download
+            let resp = ureq::post(&download_url)
+                .config()
+                .timeout_global(Some(std::time::Duration::from_secs(30)))
+                .build()
+                .send_json(&body);
+
+            match resp {
+                Ok(resp) => {
+                    let Ok(dl_resp) = resp.into_body().read_json::<LmStudioDownloadResponse>()
+                    else {
+                        let _ = tx.send(PullEvent::Error(
+                            "Failed to parse LM Studio download response".to_string(),
+                        ));
+                        return;
+                    };
+
+                    if dl_resp.status == "already_downloaded" {
+                        let _ = tx.send(PullEvent::Progress {
+                            status: "Already downloaded".to_string(),
+                            percent: Some(100.0),
+                        });
+                        let _ = tx.send(PullEvent::Done);
+                        return;
+                    }
+
+                    if dl_resp.status == "failed" {
+                        let _ = tx.send(PullEvent::Error("LM Studio download failed".to_string()));
+                        return;
+                    }
+
+                    let _ = tx.send(PullEvent::Progress {
+                        status: format!("Downloading via LM Studio ({})", dl_resp.status),
+                        percent: Some(0.0),
+                    });
+
+                    // Poll for progress
+                    loop {
+                        std::thread::sleep(std::time::Duration::from_millis(500));
+
+                        let poll = ureq::get(&status_url)
+                            .config()
+                            .timeout_global(Some(std::time::Duration::from_secs(10)))
+                            .build()
+                            .call();
+
+                        match poll {
+                            Ok(resp) => {
+                                // Try to parse as array (multiple jobs) or single object
+                                let body_str = match resp.into_body().read_to_string() {
+                                    Ok(s) => s,
+                                    Err(_) => continue,
+                                };
+
+                                // Try parsing as array first
+                                let status_opt: Option<LmStudioDownloadStatus> =
+                                    if let Ok(statuses) =
+                                        serde_json::from_str::<Vec<LmStudioDownloadStatus>>(
+                                            &body_str,
+                                        )
+                                    {
+                                        // Find our job by looking for a downloading status
+                                        statuses.into_iter().find(|s| {
+                                            s.status == "downloading"
+                                                || s.status == "completed"
+                                                || s.status == "failed"
+                                        })
+                                    } else {
+                                        serde_json::from_str(&body_str).ok()
+                                    };
+
+                                let Some(st) = status_opt else {
+                                    continue;
+                                };
+
+                                let percent = st.progress.map(|p| p * 100.0).or_else(|| {
+                                    match (st.downloaded_bytes, st.total_size_bytes) {
+                                        (Some(dl), Some(total)) if total > 0 => {
+                                            Some(dl as f64 / total as f64 * 100.0)
+                                        }
+                                        _ => None,
+                                    }
+                                });
+
+                                if st.status == "completed" {
+                                    let _ = tx.send(PullEvent::Progress {
+                                        status: "Download complete".to_string(),
+                                        percent: Some(100.0),
+                                    });
+                                    let _ = tx.send(PullEvent::Done);
+                                    return;
+                                }
+
+                                if st.status == "failed" {
+                                    let _ = tx.send(PullEvent::Error(
+                                        "LM Studio download failed".to_string(),
+                                    ));
+                                    return;
+                                }
+
+                                let _ = tx.send(PullEvent::Progress {
+                                    status: format!("Downloading via LM Studio..."),
+                                    percent,
+                                });
+                            }
+                            Err(_) => {
+                                // Status endpoint unreachable, keep trying
+                                continue;
+                            }
+                        }
+                    }
+                }
+                Err(e) => {
+                    let _ = tx.send(PullEvent::Error(format!("LM Studio download error: {e}")));
+                }
+            }
+        });
+
+        Ok(PullHandle {
+            model_tag: model_tag.to_string(),
+            receiver: rx,
+        })
+    }
+}
+
+// ---------------------------------------------------------------------------
+// LM Studio name-matching helpers
+// ---------------------------------------------------------------------------
+
+/// LM Studio uses HuggingFace model names directly. We match against the
+/// model's GGUF sources and common naming patterns.
+pub fn hf_name_to_lmstudio_candidates(hf_name: &str) -> Vec<String> {
+    let repo = hf_name
+        .split('/')
+        .next_back()
+        .unwrap_or(hf_name)
+        .to_lowercase();
+    let mut candidates = vec![hf_name.to_lowercase()];
+    if repo != hf_name.to_lowercase() {
+        candidates.push(repo.clone());
+    }
+    // Strip common suffixes for matching
+    let stripped = repo
+        .replace("-instruct", "")
+        .replace("-chat", "")
+        .replace("-hf", "")
+        .replace("-it", "");
+    if stripped != repo {
+        candidates.push(stripped);
+    }
+    candidates
+}
+
+/// Check if any LM Studio candidates for an HF model appear in the installed set.
+pub fn is_model_installed_lmstudio(hf_name: &str, installed: &HashSet<String>) -> bool {
+    let candidates = hf_name_to_lmstudio_candidates(hf_name);
+    candidates.iter().any(|candidate| {
+        installed
+            .iter()
+            .any(|installed_name| installed_name.contains(candidate))
+    })
+}
+
+/// LM Studio can download any HuggingFace model, so we always return true
+/// if the model has GGUF sources (which have HF repo IDs).
+pub fn has_lmstudio_mapping(hf_name: &str) -> bool {
+    // LM Studio can download from HF directly, so any model with a known
+    // GGUF source or a HF name is potentially downloadable.
+    !hf_name.is_empty()
+}
+
+/// Given an HF model name, return the model identifier to use for LM Studio download.
+/// LM Studio accepts HF model names directly.
+pub fn lmstudio_pull_tag(hf_name: &str) -> Option<String> {
+    if hf_name.is_empty() {
+        return None;
+    }
+    // Use the full HF name as the download identifier
+    Some(hf_name.to_string())
+}
+
+// ---------------------------------------------------------------------------
+// Docker Model Runner name-matching helpers
+// ---------------------------------------------------------------------------
+
+/// Embedded catalog of HF models confirmed to exist in Docker Hub's ai/ namespace.
+/// Generated by `scripts/scrape_docker_models.py` and refreshed alongside the model DB.
+const DOCKER_MODELS_JSON: &str = include_str!("../data/docker_models.json");
+
+#[derive(serde::Deserialize)]
+struct DockerModelCatalog {
+    models: Vec<DockerModelEntry>,
+}
+
+#[derive(serde::Deserialize)]
+struct DockerModelEntry {
+    hf_name: String,
+    docker_tag: String,
+}
+
+/// Lazily parsed Docker Model Runner catalog.
+fn docker_mr_catalog() -> &'static [(String, String)] {
+    use std::sync::OnceLock;
+    static CATALOG: OnceLock<Vec<(String, String)>> = OnceLock::new();
+    CATALOG.get_or_init(|| {
+        let Ok(catalog) = serde_json::from_str::<DockerModelCatalog>(DOCKER_MODELS_JSON) else {
+            return Vec::new();
+        };
+        catalog
+            .models
+            .into_iter()
+            .map(|e| (e.hf_name.to_lowercase(), e.docker_tag))
+            .collect()
+    })
+}
+
+/// Returns `true` if this HF model has a confirmed Docker Model Runner image.
+pub fn has_docker_mr_mapping(hf_name: &str) -> bool {
+    docker_mr_pull_tag(hf_name).is_some()
+}
+
+/// Given an HF model name, return the Docker Model Runner tag to use for pulling.
+/// Returns `None` if the model has no confirmed Docker image.
+pub fn docker_mr_pull_tag(hf_name: &str) -> Option<String> {
+    let lower = hf_name.to_lowercase();
+    docker_mr_catalog()
+        .iter()
+        .find(|(name, _)| *name == lower)
+        .map(|(_, tag)| tag.clone())
+}
+
+/// Docker Model Runner uses the Ollama naming convention (e.g. "ai/llama3.1:8b").
+/// We generate candidates from the confirmed catalog, plus base-name variants for
+/// matching against locally installed models.
+pub fn hf_name_to_docker_mr_candidates(hf_name: &str) -> Vec<String> {
+    let Some(tag) = docker_mr_pull_tag(hf_name) else {
+        return Vec::new();
+    };
+    let mut candidates = vec![tag.clone()];
+    // Also add without "ai/" prefix for matching installed models
+    if let Some(stripped) = tag.strip_prefix("ai/") {
+        candidates.push(stripped.to_string());
+    }
+    // Add base repo name (without size tag) e.g. "ai/llama3.1"
+    if let Some(base) = tag.split(':').next() {
+        candidates.push(base.to_string());
+    }
+    candidates
+}
+
+/// Check if any of the Docker Model Runner candidates for an HF model
+/// appear in the installed set.
+pub fn is_model_installed_docker_mr(hf_name: &str, installed: &HashSet<String>) -> bool {
+    let candidates = hf_name_to_docker_mr_candidates(hf_name);
+    candidates.iter().any(|candidate| {
+        installed
+            .iter()
+            .any(|installed_name| docker_mr_installed_matches(installed_name, candidate))
+    })
+}
+
+fn docker_mr_installed_matches(installed_name: &str, candidate: &str) -> bool {
+    if installed_name == candidate {
+        return true;
+    }
+    // Allow variant tags, e.g. candidate "ai/llama3.1:8b" matching
+    // installed "ai/llama3.1:8b-q4_k_m"
+    if candidate.contains(':') {
+        return installed_name.starts_with(&format!("{candidate}-"));
+    }
+    false
 }
 
 /// Strip quantization suffix from a GGUF file stem.
@@ -1545,6 +2178,17 @@ const OLLAMA_MAPPINGS: &[(&str, &str)] = &[
     ("phi-4-mini-reasoning", "phi4-mini-reasoning"),
     // DeepSeek V3.2 Speciale (no local Ollama tag yet, maps to v3)
     ("deepseek-v3.2-speciale", "deepseek-v3"),
+    // Liquid AI LFM2
+    ("lfm2-350m", "lfm2:350m"),
+    ("lfm2-700m", "lfm2:700m"),
+    ("lfm2-1.2b", "lfm2:1.2b"),
+    ("lfm2-2.6b", "lfm2:2.6b"),
+    ("lfm2-2.6b-exp", "lfm2:2.6b"),
+    ("lfm2-8b-a1b", "lfm2:8b-a1b"),
+    ("lfm2-24b-a2b", "lfm2:24b"),
+    // Liquid AI LFM2.5
+    ("lfm2.5-1.2b-instruct", "lfm2.5:1.2b"),
+    ("lfm2.5-1.2b-thinking", "lfm2.5-thinking:1.2b"),
 ];
 
 /// Look up the Ollama tag for an HF repo name. Returns the first match
@@ -1848,5 +2492,456 @@ mod tests {
 
         let files = parse_repo_gguf_entries(entries);
         assert_eq!(files, vec![("good.gguf".to_string(), 123u64)]);
+    }
+
+    // ────────────────────────────────────────────────────────────────────
+    // GGUF candidate generation tests
+    // ────────────────────────────────────────────────────────────────────
+
+    #[test]
+    fn test_hf_name_to_gguf_candidates_generates_common_patterns() {
+        // Use a model without a hardcoded mapping to test heuristic generation
+        let candidates = hf_name_to_gguf_candidates("SomeOrg/Cool-Model-7B");
+        assert!(
+            candidates
+                .iter()
+                .any(|c| c == "bartowski/Cool-Model-7B-GGUF"),
+            "Should generate bartowski candidate, got: {:?}",
+            candidates
+        );
+        assert!(
+            candidates
+                .iter()
+                .any(|c| c == "ggml-org/Cool-Model-7B-GGUF"),
+            "Should generate ggml-org candidate, got: {:?}",
+            candidates
+        );
+        assert!(
+            candidates
+                .iter()
+                .any(|c| c == "TheBloke/Cool-Model-7B-GGUF"),
+            "Should generate TheBloke candidate, got: {:?}",
+            candidates
+        );
+    }
+
+    #[test]
+    fn test_hf_name_to_gguf_candidates_strips_owner() {
+        // Should use the model name part, not the full "owner/name"
+        let candidates = hf_name_to_gguf_candidates("Qwen/Qwen2.5-7B-Instruct");
+        for c in &candidates {
+            assert!(
+                !c.contains("Qwen/Qwen"),
+                "Candidate should not contain original owner prefix: {}",
+                c
+            );
+        }
+    }
+
+    #[test]
+    fn test_lookup_gguf_repo_known_mappings() {
+        // Models with hardcoded mappings should be found
+        assert!(lookup_gguf_repo("meta-llama/Llama-3.1-8B-Instruct").is_some());
+        assert!(lookup_gguf_repo("deepseek-r1").is_some());
+    }
+
+    #[test]
+    fn test_lookup_gguf_repo_unknown_returns_none() {
+        assert!(lookup_gguf_repo("totally-unknown/model-xyz").is_none());
+    }
+
+    #[test]
+    fn test_has_gguf_mapping_matches_known_models() {
+        assert!(has_gguf_mapping("meta-llama/Llama-3.1-8B-Instruct"));
+        assert!(!has_gguf_mapping("some-random/UnknownModel"));
+    }
+
+    #[test]
+    fn test_gguf_candidates_fallback_covers_major_providers() {
+        // For a model without a hardcoded mapping, candidates should cover
+        // the major GGUF providers
+        let candidates = hf_name_to_gguf_candidates("SomeOrg/NewModel-7B");
+        assert!(candidates.iter().any(|c| c.starts_with("bartowski/")));
+        assert!(candidates.iter().any(|c| c.starts_with("ggml-org/")));
+        assert!(candidates.iter().any(|c| c.starts_with("TheBloke/")));
+        assert!(candidates.iter().all(|c| c.ends_with("-GGUF")));
+    }
+
+    #[test]
+    fn test_gguf_candidates_known_mapping_returns_single() {
+        // Models with a hardcoded mapping should return just that repo
+        let candidates = hf_name_to_gguf_candidates("meta-llama/Llama-3.1-8B-Instruct");
+        assert_eq!(candidates.len(), 1);
+        assert!(candidates[0].contains("GGUF"));
+    }
+
+    // ── select_best_gguf ─────────────────────────────────────────────
+
+    #[test]
+    fn test_select_best_gguf_prefers_higher_quality() {
+        let files = vec![
+            ("model-Q2_K.gguf".to_string(), 2_000_000_000u64),
+            ("model-Q4_K_M.gguf".to_string(), 4_000_000_000u64),
+            ("model-Q8_0.gguf".to_string(), 8_000_000_000u64),
+        ];
+        let result = LlamaCppProvider::select_best_gguf(&files, 10.0);
+        assert!(result.is_some());
+        let (name, _) = result.unwrap();
+        assert!(name.contains("Q8_0"), "should prefer Q8, got: {}", name);
+    }
+
+    #[test]
+    fn test_select_best_gguf_respects_budget() {
+        let files = vec![
+            ("model-Q2_K.gguf".to_string(), 2_000_000_000u64),
+            ("model-Q4_K_M.gguf".to_string(), 4_000_000_000u64),
+            ("model-Q8_0.gguf".to_string(), 8_000_000_000u64),
+        ];
+        // Budget ~3.7GB → Q2_K fits
+        let result = LlamaCppProvider::select_best_gguf(&files, 3.7);
+        assert!(result.is_some());
+        let (name, _) = result.unwrap();
+        assert!(
+            name.contains("Q2_K"),
+            "should select Q2_K for 3.7GB budget, got: {}",
+            name
+        );
+    }
+
+    #[test]
+    fn test_select_best_gguf_nothing_fits() {
+        let files = vec![("model-Q2_K.gguf".to_string(), 8_000_000_000u64)];
+        let result = LlamaCppProvider::select_best_gguf(&files, 1.0);
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_select_best_gguf_skips_split_files() {
+        let files = vec![
+            (
+                "model-Q4_K_M-00001-of-00003.gguf".to_string(),
+                4_000_000_000u64,
+            ),
+            ("model-Q2_K.gguf".to_string(), 2_000_000_000u64),
+        ];
+        let result = LlamaCppProvider::select_best_gguf(&files, 10.0);
+        assert!(result.is_some());
+        let (name, _) = result.unwrap();
+        assert!(
+            name.contains("Q2_K"),
+            "should skip split file, got: {}",
+            name
+        );
+    }
+
+    #[test]
+    fn test_select_best_gguf_empty_list() {
+        let result = LlamaCppProvider::select_best_gguf(&[], 10.0);
+        assert!(result.is_none());
+    }
+
+    // ── is_split_file ────────────────────────────────────────────────
+
+    #[test]
+    fn test_is_split_file() {
+        assert!(is_split_file("model-00001-of-00003.gguf"));
+        assert!(!is_split_file("model-Q4_K_M.gguf"));
+        assert!(!is_split_file("model.gguf"));
+    }
+
+    // ── urlencoding ──────────────────────────────────────────────────
+
+    #[test]
+    fn test_urlencoding_ascii() {
+        assert_eq!(urlencoding::encode("hello"), "hello");
+        assert_eq!(urlencoding::encode("test-model_v1.0"), "test-model_v1.0");
+    }
+
+    #[test]
+    fn test_urlencoding_special_chars() {
+        assert_eq!(urlencoding::encode("hello world"), "hello%20world");
+        assert_eq!(urlencoding::encode("a+b"), "a%2Bb");
+        assert_eq!(urlencoding::encode("foo/bar"), "foo%2Fbar");
+    }
+
+    #[test]
+    fn test_urlencoding_empty() {
+        assert_eq!(urlencoding::encode(""), "");
+    }
+
+    // ── is_model_installed_llamacpp ──────────────────────────────────
+
+    #[test]
+    fn test_is_model_installed_llamacpp_exact() {
+        let mut installed = HashSet::new();
+        installed.insert("llama-3.1-8b-instruct".to_string());
+        assert!(is_model_installed_llamacpp(
+            "meta-llama/Llama-3.1-8B-Instruct",
+            &installed
+        ));
+    }
+
+    #[test]
+    fn test_is_model_installed_llamacpp_stripped_suffixes() {
+        let mut installed = HashSet::new();
+        installed.insert("llama-3.1-8b".to_string());
+        assert!(is_model_installed_llamacpp(
+            "meta-llama/Llama-3.1-8B-Instruct",
+            &installed
+        ));
+    }
+
+    #[test]
+    fn test_is_model_installed_llamacpp_not_installed() {
+        let installed = HashSet::new();
+        assert!(!is_model_installed_llamacpp(
+            "meta-llama/Llama-3.1-8B-Instruct",
+            &installed
+        ));
+    }
+
+    // ── gguf_pull_tag ────────────────────────────────────────────────
+
+    #[test]
+    fn test_gguf_pull_tag_known() {
+        let tag = gguf_pull_tag("meta-llama/Llama-3.1-8B-Instruct");
+        assert!(tag.is_some());
+        assert!(tag.unwrap().contains("GGUF"));
+    }
+
+    #[test]
+    fn test_gguf_pull_tag_unknown() {
+        assert!(gguf_pull_tag("totally-unknown/model-xyz").is_none());
+    }
+
+    // ── has_ollama_mapping ───────────────────────────────────────────
+
+    #[test]
+    fn test_has_ollama_mapping_known() {
+        assert!(has_ollama_mapping("meta-llama/Llama-3.1-8B-Instruct"));
+        assert!(has_ollama_mapping("Qwen/Qwen2.5-7B-Instruct"));
+    }
+
+    #[test]
+    fn test_has_ollama_mapping_unknown() {
+        assert!(!has_ollama_mapping("totally-unknown/model-xyz"));
+    }
+
+    // ── ollama_pull_tag ──────────────────────────────────────────────
+
+    #[test]
+    fn test_ollama_pull_tag_known() {
+        let tag = ollama_pull_tag("meta-llama/Llama-3.1-8B-Instruct");
+        assert_eq!(tag, Some("llama3.1:8b".to_string()));
+    }
+
+    #[test]
+    fn test_ollama_pull_tag_unknown() {
+        assert!(ollama_pull_tag("totally-unknown/model-xyz").is_none());
+    }
+
+    // ── mlx_pull_tag ─────────────────────────────────────────────────
+
+    #[test]
+    fn test_mlx_pull_tag_prefers_4bit() {
+        let tag = mlx_pull_tag("meta-llama/Llama-3.1-8B-Instruct");
+        assert!(tag.ends_with("-4bit"), "should prefer 4bit, got: {}", tag);
+    }
+
+    #[test]
+    fn test_mlx_pull_tag_fallback() {
+        let tag = mlx_pull_tag("SomeUnknown/Model-7B");
+        assert!(!tag.is_empty());
+    }
+
+    // ── ollama_installed_matches_candidate ────────────────────────────
+
+    #[test]
+    fn test_ollama_installed_matches_exact() {
+        assert!(ollama_installed_matches_candidate(
+            "llama3.1:8b",
+            "llama3.1:8b"
+        ));
+    }
+
+    #[test]
+    fn test_ollama_installed_matches_variant_suffix() {
+        assert!(ollama_installed_matches_candidate(
+            "llama3.1:8b-instruct-q4_K_M",
+            "llama3.1:8b"
+        ));
+    }
+
+    #[test]
+    fn test_ollama_installed_no_match() {
+        assert!(!ollama_installed_matches_candidate(
+            "qwen2.5:7b",
+            "llama3.1:8b"
+        ));
+    }
+
+    // ── parse_repo_gguf_entries ──────────────────────────────────────
+
+    #[test]
+    fn test_parse_repo_gguf_entries_valid() {
+        let entries = vec![
+            serde_json::json!({"path": "model-Q4_K_M.gguf", "size": 4_000_000_000u64}),
+            serde_json::json!({"path": "model-Q8_0.gguf", "size": 8_000_000_000u64}),
+        ];
+        let files = parse_repo_gguf_entries(entries);
+        assert_eq!(files.len(), 2);
+        assert_eq!(files[0].0, "model-Q4_K_M.gguf");
+        assert_eq!(files[1].0, "model-Q8_0.gguf");
+    }
+
+    #[test]
+    fn test_parse_repo_gguf_entries_missing_size_defaults_to_zero() {
+        let entries = vec![serde_json::json!({"path": "model.gguf"})];
+        let files = parse_repo_gguf_entries(entries);
+        assert_eq!(files.len(), 1);
+        assert_eq!(files[0].1, 0);
+    }
+
+    #[test]
+    fn test_parse_repo_gguf_entries_skips_non_gguf() {
+        let entries = vec![
+            serde_json::json!({"path": "README.md", "size": 1000u64}),
+            serde_json::json!({"path": "config.json", "size": 500u64}),
+            serde_json::json!({"path": "model.gguf", "size": 4_000_000_000u64}),
+        ];
+        let files = parse_repo_gguf_entries(entries);
+        assert_eq!(files.len(), 1);
+        assert_eq!(files[0].0, "model.gguf");
+    }
+
+    // ── hf_name_to_mlx_candidates edge cases ─────────────────────────
+
+    #[test]
+    fn test_hf_name_to_mlx_candidates_bare_model_name() {
+        let candidates = hf_name_to_mlx_candidates("Phi-4");
+        assert!(candidates.iter().any(|c| c.contains("phi-4")));
+        assert!(candidates.iter().any(|c| c.ends_with("-4bit")));
+    }
+
+    #[test]
+    fn test_hf_name_to_mlx_candidates_no_duplicates() {
+        let candidates = hf_name_to_mlx_candidates("meta-llama/Llama-3.1-8B-Instruct");
+        let unique: HashSet<_> = candidates.iter().collect();
+        assert_eq!(
+            unique.len(),
+            candidates.len(),
+            "candidates should have no duplicates: {:?}",
+            candidates
+        );
+    }
+
+    // ── hf_name_to_ollama_candidates edge cases ──────────────────────
+
+    #[test]
+    fn test_hf_name_to_ollama_candidates_unknown_returns_empty() {
+        let candidates = hf_name_to_ollama_candidates("totally-unknown/model-xyz");
+        assert!(candidates.is_empty());
+    }
+
+    #[test]
+    fn test_hf_name_to_ollama_candidates_multiple_models() {
+        // Test a variety of known models
+        assert!(!hf_name_to_ollama_candidates("meta-llama/Llama-3.1-8B-Instruct").is_empty());
+        assert!(!hf_name_to_ollama_candidates("Qwen/Qwen2.5-Coder-7B-Instruct").is_empty());
+        assert!(!hf_name_to_ollama_candidates("google/gemma-2-9b-it").is_empty());
+    }
+
+    // ── Docker Model Runner ─────────────────────────────────────────
+
+    #[test]
+    fn test_docker_mr_catalog_parses() {
+        // The embedded catalog should parse without errors
+        let catalog = docker_mr_catalog();
+        assert!(!catalog.is_empty(), "Docker MR catalog should not be empty");
+    }
+
+    #[test]
+    fn test_has_docker_mr_mapping_known() {
+        // Llama 3.1 70B is in both our HF database and Docker Hub ai/ namespace
+        assert!(has_docker_mr_mapping("meta-llama/Llama-3.1-70B-Instruct"));
+    }
+
+    #[test]
+    fn test_has_docker_mr_mapping_unknown() {
+        assert!(!has_docker_mr_mapping("totally-unknown/model-xyz"));
+    }
+
+    #[test]
+    fn test_docker_mr_pull_tag_returns_ai_prefixed() {
+        let tag = docker_mr_pull_tag("meta-llama/Llama-3.1-70B-Instruct");
+        assert!(tag.is_some());
+        assert!(tag.unwrap().starts_with("ai/"));
+    }
+
+    #[test]
+    fn test_docker_mr_candidates_includes_ai_prefix() {
+        let candidates = hf_name_to_docker_mr_candidates("meta-llama/Llama-3.1-70B-Instruct");
+        assert!(candidates.iter().any(|c| c.starts_with("ai/")));
+    }
+
+    #[test]
+    fn test_docker_mr_candidates_unknown_returns_empty() {
+        let candidates = hf_name_to_docker_mr_candidates("totally-unknown/model-xyz");
+        assert!(candidates.is_empty());
+    }
+
+    #[test]
+    fn test_is_model_installed_docker_mr_exact() {
+        let mut installed = HashSet::new();
+        installed.insert("ai/llama3.1:70b".to_string());
+        installed.insert("llama3.1:70b".to_string());
+        installed.insert("llama3.1".to_string());
+        assert!(is_model_installed_docker_mr(
+            "meta-llama/Llama-3.1-70B-Instruct",
+            &installed
+        ));
+    }
+
+    #[test]
+    fn test_is_model_installed_docker_mr_variant_suffix() {
+        let mut installed = HashSet::new();
+        installed.insert("ai/llama3.1:70b-q4_k_m".to_string());
+        assert!(is_model_installed_docker_mr(
+            "meta-llama/Llama-3.1-70B-Instruct",
+            &installed
+        ));
+    }
+
+    #[test]
+    fn test_is_model_installed_docker_mr_not_installed() {
+        let installed = HashSet::new();
+        assert!(!is_model_installed_docker_mr(
+            "meta-llama/Llama-3.1-70B-Instruct",
+            &installed
+        ));
+    }
+
+    #[test]
+    fn test_normalize_docker_mr_host_with_scheme() {
+        assert_eq!(
+            normalize_docker_mr_host("https://docker.example.com:12434"),
+            Some("https://docker.example.com:12434".to_string())
+        );
+    }
+
+    #[test]
+    fn test_normalize_docker_mr_host_without_scheme() {
+        assert_eq!(
+            normalize_docker_mr_host("docker.example.com:12434"),
+            Some("http://docker.example.com:12434".to_string())
+        );
+    }
+
+    #[test]
+    fn test_normalize_docker_mr_host_rejects_unsupported_scheme() {
+        assert_eq!(
+            normalize_docker_mr_host("ftp://docker.example.com:12434"),
+            None
+        );
     }
 }

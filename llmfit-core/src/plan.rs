@@ -3,8 +3,22 @@ use crate::hardware::{GpuBackend, SystemSpecs};
 use crate::models::{LlmModel, quant_speed_multiplier};
 
 const SUPPORTED_QUANTS: &[&str] = &[
-    "F32", "F16", "BF16", "Q8_0", "Q6_K", "Q5_K_M", "Q4_K_M", "Q4_0", "Q3_K_M", "Q2_K", "mlx-8bit",
+    "F32",
+    "F16",
+    "BF16",
+    "Q8_0",
+    "Q6_K",
+    "Q5_K_M",
+    "Q4_K_M",
+    "Q4_0",
+    "Q3_K_M",
+    "Q2_K",
+    "mlx-8bit",
     "mlx-4bit",
+    "AWQ-4bit",
+    "AWQ-8bit",
+    "GPTQ-Int4",
+    "GPTQ-Int8",
 ];
 
 #[derive(Debug, Clone, serde::Serialize)]
@@ -101,6 +115,21 @@ pub fn normalize_quant(quant: &str) -> Option<String> {
     }
     if trimmed.eq_ignore_ascii_case("mlx-8bit") {
         return Some("mlx-8bit".to_string());
+    }
+
+    // AWQ quantization formats
+    if trimmed.eq_ignore_ascii_case("awq-4bit") {
+        return Some("AWQ-4bit".to_string());
+    }
+    if trimmed.eq_ignore_ascii_case("awq-8bit") {
+        return Some("AWQ-8bit".to_string());
+    }
+    // GPTQ quantization formats
+    if trimmed.eq_ignore_ascii_case("gptq-int4") {
+        return Some("GPTQ-Int4".to_string());
+    }
+    if trimmed.eq_ignore_ascii_case("gptq-int8") {
+        return Some("GPTQ-Int8".to_string());
     }
 
     let upper = trimmed.to_uppercase();
@@ -702,6 +731,7 @@ mod tests {
             release_date: None,
             gguf_sources: vec![],
             capabilities: vec![],
+            format: crate::models::ModelFormat::default(),
         }
     }
 
@@ -730,6 +760,28 @@ mod tests {
     }
 
     #[test]
+    fn test_normalize_quant_all_supported() {
+        for q in SUPPORTED_QUANTS {
+            if q.starts_with("mlx-") || q.starts_with("AWQ-") || q.starts_with("GPTQ-") {
+                continue; // handled by case-insensitive paths
+            }
+            assert_eq!(
+                normalize_quant(&q.to_lowercase()),
+                Some(q.to_string()),
+                "lowercase '{}' should normalize",
+                q
+            );
+        }
+    }
+
+    #[test]
+    fn test_normalize_quant_whitespace_handling() {
+        assert_eq!(normalize_quant("  q4_k_m  "), Some("Q4_K_M".to_string()));
+        assert_eq!(normalize_quant(""), None);
+        assert_eq!(normalize_quant("   "), None);
+    }
+
+    #[test]
     fn test_estimate_model_plan() {
         let req = PlanRequest {
             context: 8192,
@@ -744,9 +796,401 @@ mod tests {
     }
 
     #[test]
+    fn test_estimate_model_plan_zero_context_errors() {
+        let req = PlanRequest {
+            context: 0,
+            quant: None,
+            target_tps: None,
+        };
+        let result = estimate_model_plan(&test_model(), &req, &test_specs());
+        assert!(result.is_err());
+        assert!(
+            result
+                .unwrap_err()
+                .contains("--context must be greater than 0")
+        );
+    }
+
+    #[test]
+    fn test_estimate_model_plan_negative_tps_errors() {
+        let req = PlanRequest {
+            context: 4096,
+            quant: None,
+            target_tps: Some(-5.0),
+        };
+        let result = estimate_model_plan(&test_model(), &req, &test_specs());
+        assert!(result.is_err());
+        assert!(
+            result
+                .unwrap_err()
+                .contains("--target-tps must be greater than 0")
+        );
+    }
+
+    #[test]
+    fn test_estimate_model_plan_invalid_quant_errors() {
+        let req = PlanRequest {
+            context: 4096,
+            quant: Some("INVALID_QUANT".to_string()),
+            target_tps: None,
+        };
+        let result = estimate_model_plan(&test_model(), &req, &test_specs());
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("Unsupported quantization"));
+    }
+
+    #[test]
+    fn test_estimate_model_plan_uses_model_quant_when_none() {
+        let req = PlanRequest {
+            context: 4096,
+            quant: None,
+            target_tps: None,
+        };
+        let plan = estimate_model_plan(&test_model(), &req, &test_specs()).unwrap();
+        assert_eq!(plan.quantization, "Q4_K_M"); // model default
+    }
+
+    #[test]
+    fn test_estimate_model_plan_has_three_run_paths() {
+        let req = PlanRequest {
+            context: 4096,
+            quant: None,
+            target_tps: None,
+        };
+        let plan = estimate_model_plan(&test_model(), &req, &test_specs()).unwrap();
+        assert_eq!(plan.run_paths.len(), 3);
+        assert_eq!(plan.run_paths[0].path, PlanRunPath::Gpu);
+        assert_eq!(plan.run_paths[1].path, PlanRunPath::CpuOffload);
+        assert_eq!(plan.run_paths[2].path, PlanRunPath::CpuOnly);
+    }
+
+    #[test]
+    fn test_estimate_model_plan_gpu_path_feasible() {
+        let req = PlanRequest {
+            context: 4096,
+            quant: Some("Q4_K_M".to_string()),
+            target_tps: None,
+        };
+        let plan = estimate_model_plan(&test_model(), &req, &test_specs()).unwrap();
+        let gpu_path = &plan.run_paths[0];
+        assert!(gpu_path.feasible);
+        assert!(gpu_path.minimum.is_some());
+        assert!(gpu_path.recommended.is_some());
+        assert!(gpu_path.estimated_tps.unwrap() > 0.0);
+    }
+
+    // ── fit_level_for ────────────────────────────────────────────────
+
+    #[test]
+    fn test_fit_level_for_gpu_perfect() {
+        let fit = fit_level_for(PlanRunPath::Gpu, 8.0, 24.0, 12.0);
+        assert_eq!(fit, FitLevel::Perfect);
+    }
+
+    #[test]
+    fn test_fit_level_for_gpu_good() {
+        // required*1.2 = 9.6, available = 10.0 > 9.6, but recommended = 12.0 > 10.0
+        let fit = fit_level_for(PlanRunPath::Gpu, 8.0, 10.0, 12.0);
+        assert_eq!(fit, FitLevel::Good);
+    }
+
+    #[test]
+    fn test_fit_level_for_gpu_marginal() {
+        // available barely exceeds required, but less than required*1.2
+        let fit = fit_level_for(PlanRunPath::Gpu, 8.0, 8.5, 12.0);
+        assert_eq!(fit, FitLevel::Marginal);
+    }
+
+    #[test]
+    fn test_fit_level_for_too_tight() {
+        let fit = fit_level_for(PlanRunPath::Gpu, 24.0, 8.0, 32.0);
+        assert_eq!(fit, FitLevel::TooTight);
+    }
+
+    #[test]
+    fn test_fit_level_for_cpu_offload_caps_at_good() {
+        let fit = fit_level_for(PlanRunPath::CpuOffload, 8.0, 24.0, 12.0);
+        assert_eq!(fit, FitLevel::Good);
+    }
+
+    #[test]
+    fn test_fit_level_for_cpu_only_always_marginal() {
+        let fit = fit_level_for(PlanRunPath::CpuOnly, 4.0, 64.0, 8.0);
+        assert_eq!(fit, FitLevel::Marginal);
+    }
+
+    // ── PlanRunPath ──────────────────────────────────────────────────
+
+    #[test]
+    fn test_plan_run_path_labels() {
+        assert_eq!(PlanRunPath::Gpu.label(), "GPU");
+        assert_eq!(PlanRunPath::CpuOffload.label(), "CPU offload");
+        assert_eq!(PlanRunPath::CpuOnly.label(), "CPU-only");
+    }
+
+    #[test]
+    fn test_plan_run_path_to_run_mode() {
+        assert_eq!(PlanRunPath::Gpu.run_mode(), RunMode::Gpu);
+        assert_eq!(PlanRunPath::CpuOffload.run_mode(), RunMode::CpuOffload);
+        assert_eq!(PlanRunPath::CpuOnly.run_mode(), RunMode::CpuOnly);
+    }
+
+    // ── estimate_tps ─────────────────────────────────────────────────
+
+    #[test]
+    fn test_estimate_tps_gpu_faster_than_cpu() {
+        let model = test_model();
+        let gpu_tps = estimate_tps(&model, "Q4_K_M", GpuBackend::Cuda, PlanRunPath::Gpu, 8);
+        let cpu_tps = estimate_tps(
+            &model,
+            "Q4_K_M",
+            GpuBackend::CpuX86,
+            PlanRunPath::CpuOnly,
+            8,
+        );
+        assert!(gpu_tps > cpu_tps);
+    }
+
+    #[test]
+    fn test_estimate_tps_cpu_offload_slower_than_gpu() {
+        let model = test_model();
+        let gpu_tps = estimate_tps(&model, "Q4_K_M", GpuBackend::Cuda, PlanRunPath::Gpu, 8);
+        let offload_tps = estimate_tps(
+            &model,
+            "Q4_K_M",
+            GpuBackend::Cuda,
+            PlanRunPath::CpuOffload,
+            8,
+        );
+        assert!(gpu_tps > offload_tps);
+    }
+
+    #[test]
+    fn test_estimate_tps_more_cores_helps() {
+        let model = test_model();
+        let tps_4 = estimate_tps(&model, "Q4_K_M", GpuBackend::Cuda, PlanRunPath::Gpu, 4);
+        let tps_16 = estimate_tps(&model, "Q4_K_M", GpuBackend::Cuda, PlanRunPath::Gpu, 16);
+        assert!(tps_16 >= tps_4);
+    }
+
+    #[test]
+    fn test_estimate_tps_with_known_gpu_uses_bandwidth() {
+        let model = test_model();
+        let bw_tps = estimate_tps_with_gpu(
+            &model,
+            "Q4_K_M",
+            GpuBackend::Cuda,
+            PlanRunPath::Gpu,
+            8,
+            Some("NVIDIA RTX 4090"),
+        );
+        let fallback_tps = estimate_tps_with_gpu(
+            &model,
+            "Q4_K_M",
+            GpuBackend::Cuda,
+            PlanRunPath::Gpu,
+            8,
+            None,
+        );
+        // Known GPU should give a different (bandwidth-based) estimate
+        assert!((bw_tps - fallback_tps).abs() > 0.01);
+    }
+
+    // ── minimum_cores_for_target ─────────────────────────────────────
+
+    #[test]
+    fn test_minimum_cores_no_target_returns_default() {
+        let model = test_model();
+        let cores =
+            minimum_cores_for_target(&model, "Q4_K_M", GpuBackend::Cuda, PlanRunPath::Gpu, None);
+        assert_eq!(cores, Some(4));
+    }
+
+    #[test]
+    fn test_minimum_cores_with_reachable_target() {
+        let model = test_model();
+        let cores = minimum_cores_for_target(
+            &model,
+            "Q4_K_M",
+            GpuBackend::Cuda,
+            PlanRunPath::Gpu,
+            Some(5.0),
+        );
+        assert!(cores.is_some());
+        assert!(cores.unwrap() >= 1);
+    }
+
+    #[test]
+    fn test_minimum_cores_unreachable_target_returns_none() {
+        let model = test_model();
+        let cores = minimum_cores_for_target(
+            &model,
+            "Q4_K_M",
+            GpuBackend::CpuX86,
+            PlanRunPath::CpuOnly,
+            Some(999999.0),
+        );
+        assert!(cores.is_none());
+    }
+
+    // ── default_gpu_backend ──────────────────────────────────────────
+
+    #[test]
+    fn test_default_gpu_backend_uses_system_when_gpu() {
+        let specs = test_specs();
+        assert_eq!(default_gpu_backend(&specs), GpuBackend::Cuda);
+    }
+
+    #[test]
+    fn test_default_gpu_backend_falls_back_to_cuda() {
+        let mut specs = test_specs();
+        specs.has_gpu = false;
+        assert_eq!(default_gpu_backend(&specs), GpuBackend::Cuda);
+    }
+
+    // ── evaluate_current ─────────────────────────────────────────────
+
+    #[test]
+    fn test_evaluate_current_with_gpu() {
+        let model = test_model();
+        let specs = test_specs();
+        let status = evaluate_current(&model, "Q4_K_M", 4096, None, &specs);
+        assert!(status.estimated_tps > 0.0);
+        // With 12GB VRAM and 7B model, GPU should be preferred
+        assert_eq!(status.run_mode, RunMode::Gpu);
+    }
+
+    #[test]
+    fn test_evaluate_current_no_gpu_uses_cpu() {
+        let model = test_model();
+        let mut specs = test_specs();
+        specs.has_gpu = false;
+        specs.gpu_vram_gb = None;
+        specs.total_gpu_vram_gb = None;
+        let status = evaluate_current(&model, "Q4_K_M", 4096, None, &specs);
+        assert_eq!(status.run_mode, RunMode::CpuOnly);
+        assert!(status.estimated_tps > 0.0);
+    }
+
+    #[test]
+    fn test_evaluate_current_too_tight_when_no_memory() {
+        let model = test_model();
+        let mut specs = test_specs();
+        specs.has_gpu = false;
+        specs.gpu_vram_gb = None;
+        specs.total_gpu_vram_gb = None;
+        specs.available_ram_gb = 0.5; // too small for the model
+        let status = evaluate_current(&model, "Q4_K_M", 4096, Some(999999.0), &specs);
+        assert_eq!(status.fit_level, FitLevel::TooTight);
+    }
+
+    // ── build_path_estimate ──────────────────────────────────────────
+
+    #[test]
+    fn test_build_path_estimate_gpu() {
+        let model = test_model();
+        let specs = test_specs();
+        let estimate = build_path_estimate(&model, "Q4_K_M", 4096, None, PlanRunPath::Gpu, &specs);
+        assert!(estimate.feasible);
+        let min = estimate.minimum.unwrap();
+        assert!(min.vram_gb.unwrap() > 0.0);
+        assert!(min.ram_gb > 0.0);
+    }
+
+    #[test]
+    fn test_build_path_estimate_cpu_offload_on_unified_is_infeasible() {
+        let model = test_model();
+        let mut specs = test_specs();
+        specs.unified_memory = true;
+        let estimate = build_path_estimate(
+            &model,
+            "Q4_K_M",
+            4096,
+            None,
+            PlanRunPath::CpuOffload,
+            &specs,
+        );
+        assert!(!estimate.feasible);
+        assert!(estimate.notes.iter().any(|n| n.contains("unified-memory")));
+    }
+
+    #[test]
+    fn test_build_path_estimate_cpu_only_no_vram() {
+        let model = test_model();
+        let specs = test_specs();
+        let estimate =
+            build_path_estimate(&model, "Q4_K_M", 4096, None, PlanRunPath::CpuOnly, &specs);
+        assert!(estimate.feasible);
+        assert!(estimate.minimum.as_ref().unwrap().vram_gb.is_none());
+    }
+
+    // ── resolve_model_selector ───────────────────────────────────────
+
+    #[test]
     fn test_resolve_model_selector() {
         let models = vec![test_model()];
         let found = resolve_model_selector(&models, "qwen-test-7b").expect("exact match");
         assert_eq!(found.name, "Qwen-Test-7B");
+    }
+
+    #[test]
+    fn test_resolve_model_selector_empty_errors() {
+        let models = vec![test_model()];
+        let result = resolve_model_selector(&models, "");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("cannot be empty"));
+    }
+
+    #[test]
+    fn test_resolve_model_selector_not_found() {
+        let models = vec![test_model()];
+        let result = resolve_model_selector(&models, "nonexistent-model");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("No model found"));
+    }
+
+    #[test]
+    fn test_resolve_model_selector_ambiguous() {
+        let mut m1 = test_model();
+        m1.name = "Qwen-Test-7B".to_string();
+        let mut m2 = test_model();
+        m2.name = "Qwen-Test-14B".to_string();
+        let models = vec![m1, m2];
+        let result = resolve_model_selector(&models, "qwen-test");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("ambiguous"));
+    }
+
+    #[test]
+    fn test_resolve_model_selector_partial_match() {
+        let models = vec![test_model()];
+        let found = resolve_model_selector(&models, "test-7b").expect("partial match");
+        assert_eq!(found.name, "Qwen-Test-7B");
+    }
+
+    // ── upgrade_deltas ───────────────────────────────────────────────
+
+    #[test]
+    fn test_plan_has_upgrade_deltas() {
+        let model = test_model();
+        let mut specs = test_specs();
+        specs.gpu_vram_gb = Some(4.0); // small VRAM triggers upgrade suggestion
+        specs.total_gpu_vram_gb = Some(4.0);
+        let req = PlanRequest {
+            context: 4096,
+            quant: Some("Q4_K_M".to_string()),
+            target_tps: None,
+        };
+        let plan = estimate_model_plan(&model, &req, &specs).unwrap();
+        assert!(!plan.upgrade_deltas.is_empty());
+    }
+
+    #[test]
+    fn test_normalize_awq_gptq_quants() {
+        assert_eq!(normalize_quant("awq-4bit"), Some("AWQ-4bit".to_string()));
+        assert_eq!(normalize_quant("AWQ-4BIT"), Some("AWQ-4bit".to_string()));
+        assert_eq!(normalize_quant("awq-8bit"), Some("AWQ-8bit".to_string()));
+        assert_eq!(normalize_quant("gptq-int4"), Some("GPTQ-Int4".to_string()));
+        assert_eq!(normalize_quant("GPTQ-INT8"), Some("GPTQ-Int8".to_string()));
     }
 }

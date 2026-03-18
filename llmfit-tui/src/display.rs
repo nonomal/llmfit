@@ -500,6 +500,8 @@ fn fit_to_json(fit: &ModelFit) -> serde_json::Value {
         "best_quant": fit.best_quant,
         "memory_required_gb": round2(fit.memory_required_gb),
         "memory_available_gb": round2(fit.memory_available_gb),
+        "moe_offloaded_gb": fit.moe_offloaded_gb.map(round2),
+        "total_memory_gb": round2(fit.memory_required_gb + fit.moe_offloaded_gb.unwrap_or(0.0)),
         "utilization_pct": round1(fit.utilization_pct),
         "notes": fit.notes,
         "gguf_sources": fit.model.gguf_sources,

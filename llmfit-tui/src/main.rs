@@ -373,6 +373,7 @@ AGENT USAGE:
   llmfit recommend
   llmfit recommend -n 3 --use-case coding --min-fit good
   llmfit recommend --runtime mlx --capability vision
+  llmfit recommend --force-runtime llamacpp  # get llama.cpp results on Apple Silicon
 
   JSON output is the default. Fields: { system: {...}, models: [{ name,
   provider, parameter_count, fit_level, run_mode, score, score_components
@@ -395,6 +396,11 @@ AGENT USAGE:
         /// Filter by inference runtime: mlx, llamacpp, any
         #[arg(long, default_value = "any")]
         runtime: String,
+
+        /// Force a specific runtime override, bypassing automatic selection
+        /// (e.g. get llama.cpp recommendations on Apple Silicon instead of MLX)
+        #[arg(long, value_name = "RUNTIME")]
+        force_runtime: Option<String>,
 
         /// Filter by capability: vision, tool_use (comma-separated for multiple)
         #[arg(long, value_name = "CAPS")]
@@ -659,26 +665,31 @@ fn fit_matches_filter(fit: &ModelFit, filter: FitArg) -> bool {
     }
 }
 
-fn find_fit_index_by_selector(fits: &[ModelFit], selector: &str) -> Result<usize, String> {
+fn find_name_index_by_selector<T>(
+    items: &[T],
+    selector: &str,
+    get_name: impl Fn(&T) -> &str,
+) -> Result<usize, String> {
     let needle = selector.trim().to_lowercase();
     if needle.is_empty() {
         return Err("Model selector cannot be empty".to_string());
     }
 
-    if let Some((idx, _)) = fits
+    if let Some((idx, _)) = items
         .iter()
         .enumerate()
-        .find(|(_, f)| f.model.name.to_lowercase() == needle)
+        .find(|(_, item)| get_name(item).to_lowercase() == needle)
     {
         return Ok(idx);
     }
 
-    let matches: Vec<(usize, &str)> = fits
+    let matches: Vec<(usize, String)> = items
         .iter()
         .enumerate()
-        .filter_map(|(i, f)| {
-            if f.model.name.to_lowercase().contains(&needle) {
-                Some((i, f.model.name.as_str()))
+        .filter_map(|(i, item)| {
+            let name = get_name(item);
+            if name.to_lowercase().contains(&needle) {
+                Some((i, name.to_string()))
             } else {
                 None
             }
@@ -701,6 +712,10 @@ fn find_fit_index_by_selector(fits: &[ModelFit], selector: &str) -> Result<usize
             ))
         }
     }
+}
+
+fn find_fit_index_by_selector(fits: &[ModelFit], selector: &str) -> Result<usize, String> {
+    find_name_index_by_selector(fits, selector, |fit| fit.model.name.as_str())
 }
 
 fn run_diff(
@@ -858,6 +873,7 @@ fn run_recommend(
     use_case: Option<String>,
     min_fit: String,
     runtime_filter: String,
+    force_runtime: Option<String>,
     capability: Option<String>,
     json: bool,
     memory_override: &Option<String>,
@@ -866,11 +882,27 @@ fn run_recommend(
     let specs = detect_specs(memory_override);
     let db = ModelDatabase::new();
 
+    // Parse --force-runtime into an InferenceRuntime if provided
+    let forced_rt = force_runtime
+        .as_deref()
+        .map(|rt| match rt.to_lowercase().as_str() {
+            "mlx" => llmfit_core::fit::InferenceRuntime::Mlx,
+            "llamacpp" | "llama.cpp" | "llama_cpp" => llmfit_core::fit::InferenceRuntime::LlamaCpp,
+            "vllm" => llmfit_core::fit::InferenceRuntime::Vllm,
+            other => {
+                eprintln!(
+                    "Unknown runtime '{}'. Valid options: mlx, llamacpp, vllm",
+                    other
+                );
+                std::process::exit(1);
+            }
+        });
+
     let mut fits: Vec<ModelFit> = db
         .get_all_models()
         .iter()
         .filter(|m| backend_compatible(m, &specs))
-        .map(|m| ModelFit::analyze_with_context_limit(m, &specs, context_limit))
+        .map(|m| ModelFit::analyze_with_forced_runtime(m, &specs, context_limit, forced_rt))
         .collect();
 
     // Filter by minimum fit level
@@ -904,6 +936,7 @@ fn run_recommend(
         "llamacpp" | "llama.cpp" | "llama_cpp" => {
             fits.retain(|f| f.runtime == llmfit_core::fit::InferenceRuntime::LlamaCpp)
         }
+        "vllm" => fits.retain(|f| f.runtime == llmfit_core::fit::InferenceRuntime::Vllm),
         _ => {} // "any" or unrecognized — keep all
     }
 
@@ -1345,22 +1378,17 @@ fn main() {
             Commands::Info { model } => {
                 let db = ModelDatabase::new();
                 let specs = detect_specs(&cli.memory);
-                let results = db.find_model(&model);
+                let models = db.get_all_models();
 
-                if results.is_empty() {
-                    println!("\nNo model found matching '{}'", model);
-                    return;
-                }
-
-                if results.len() > 1 {
-                    println!("\nMultiple models found. Please be more specific:");
-                    for m in results {
-                        println!("  - {}", m.name);
+                let idx = match find_name_index_by_selector(models, &model, |m| m.name.as_str()) {
+                    Ok(i) => i,
+                    Err(err) => {
+                        println!("\n{}", err);
+                        return;
                     }
-                    return;
-                }
+                };
 
-                let fit = ModelFit::analyze_with_context_limit(results[0], &specs, context_limit);
+                let fit = ModelFit::analyze_with_context_limit(&models[idx], &specs, context_limit);
                 if cli.json {
                     display::display_json_fits(&specs, &[fit]);
                 } else {
@@ -1406,6 +1434,7 @@ fn main() {
                 use_case,
                 min_fit,
                 runtime,
+                force_runtime,
                 capability,
                 json,
             } => {
@@ -1414,6 +1443,7 @@ fn main() {
                     use_case,
                     min_fit,
                     runtime,
+                    force_runtime,
                     capability,
                     json,
                     &cli.memory,
@@ -1454,8 +1484,8 @@ fn main() {
         return;
     }
 
-    // If --cli flag, use classic fit output
-    if cli.cli {
+    // If --cli or --json flag, use classic fit output
+    if cli.cli || cli.json {
         run_fit(
             cli.perfect,
             cli.limit,
@@ -1500,6 +1530,7 @@ mod tests {
                 release_date: Some("2025-01-01".to_string()),
                 gguf_sources: vec![],
                 capabilities: vec![],
+                format: llmfit_core::models::ModelFormat::default(),
             },
             fit_level,
             run_mode: RunMode::Gpu,
@@ -1549,5 +1580,56 @@ mod tests {
         ];
         let err = find_fit_index_by_selector(&fits, "model-a").expect_err("should be ambiguous");
         assert!(err.contains("Multiple models match"));
+    }
+
+    #[test]
+    fn generic_selector_prefers_exact_match_for_models() {
+        let models = vec![
+            LlmModel {
+                name: "Qwen/Qwen3-Coder-Next-FP8".to_string(),
+                provider: "Qwen".to_string(),
+                parameter_count: "7B".to_string(),
+                parameters_raw: None,
+                min_ram_gb: 4.0,
+                recommended_ram_gb: 8.0,
+                min_vram_gb: Some(4.0),
+                quantization: "Q4_K_M".to_string(),
+                context_length: 8192,
+                use_case: "general".to_string(),
+                is_moe: false,
+                num_experts: None,
+                active_experts: None,
+                active_parameters: None,
+                release_date: None,
+                gguf_sources: vec![],
+                capabilities: vec![],
+                format: llmfit_core::models::ModelFormat::default(),
+            },
+            LlmModel {
+                name: "Qwen/Qwen3-Coder-Next".to_string(),
+                provider: "Qwen".to_string(),
+                parameter_count: "7B".to_string(),
+                parameters_raw: None,
+                min_ram_gb: 4.0,
+                recommended_ram_gb: 8.0,
+                min_vram_gb: Some(4.0),
+                quantization: "Q4_K_M".to_string(),
+                context_length: 8192,
+                use_case: "general".to_string(),
+                is_moe: false,
+                num_experts: None,
+                active_experts: None,
+                active_parameters: None,
+                release_date: None,
+                gguf_sources: vec![],
+                capabilities: vec![],
+                format: llmfit_core::models::ModelFormat::default(),
+            },
+        ];
+
+        let idx =
+            find_name_index_by_selector(&models, "Qwen/Qwen3-Coder-Next", |m| m.name.as_str())
+                .expect("should resolve exact model");
+        assert_eq!(idx, 1);
     }
 }

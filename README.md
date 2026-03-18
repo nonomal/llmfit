@@ -3,6 +3,12 @@
 <p align="center">
   <img src="assets/icon.svg" alt="llmfit icon" width="128" height="128">
 </p>
+
+<p align="center">
+  <b>English</b> ·
+  <a href="README.zh.md">中文</a>
+</p>
+
 <p align="center">
   <a href="https://github.com/AlexsJones/llmfit/actions/workflows/ci.yml"><img src="https://github.com/AlexsJones/llmfit/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
   <a href="https://crates.io/crates/llmfit"><img src="https://img.shields.io/crates/v/llmfit.svg" alt="Crates.io"></a>
@@ -13,7 +19,7 @@
 
 A terminal tool that right-sizes LLM models to your system's RAM, CPU, and GPU. Detects your hardware, scores each model across quality, speed, fit, and context dimensions, and tells you which ones will actually run well on your machine.
 
-Ships with an interactive TUI (default) and a classic CLI mode. Supports multi-GPU setups, MoE architectures, dynamic quantization selection, speed estimation, and local runtime providers (Ollama, llama.cpp, MLX).
+Ships with an interactive TUI (default) and a classic CLI mode. Supports multi-GPU setups, MoE architectures, dynamic quantization selection, speed estimation, and local runtime providers (Ollama, llama.cpp, MLX, Docker Model Runner, LM Studio).
 
 > **Sister project:** Check out [sympozium](https://github.com/AlexsJones/sympozium/) for managing agents in Kubernetes.
 
@@ -49,6 +55,15 @@ Downloads the latest release binary from GitHub and installs it to `/usr/local/b
 curl -fsSL https://llmfit.axjns.dev/install.sh | sh -s -- --local
 ```
 
+### Docker / Podman
+```sh
+docker run ghcr.io/alexsjones/llmfit
+```
+This prints JSON from `llmfit recommend` command. The JSON could be further queried with `jq`.
+```
+podman run ghcr.io/alexsjones/llmfit recommend --use-case coding | jq '.models[].name'
+```
+
 ### From source
 ```sh
 git clone https://github.com/AlexsJones/llmfit.git
@@ -69,26 +84,71 @@ llmfit
 
 Launches the interactive terminal UI. Your system specs (CPU, RAM, GPU name, VRAM, backend) are shown at the top. Models are listed in a scrollable table sorted by composite score. Each row shows the model's score, estimated tok/s, best quantization for your hardware, run mode, memory usage, and use-case category.
 
-| Key | Action |
-|---|---|
-| `Up` / `Down` or `j` / `k` | Navigate models |
-| `/` | Enter search mode (partial match on name, provider, params, use case) |
-| `Esc` or `Enter` | Exit search mode |
-| `Ctrl-U` | Clear search |
-| `f` | Cycle fit filter: All, Runnable, Perfect, Good, Marginal |
-| `a` | Cycle availability filter: All, GGUF Avail, Installed |
-| `s` | Cycle sort column: Score, Params, Mem%, Ctx, Date, Use Case |
-| `t` | Cycle color theme (saved automatically) |
-| `p` | Open Plan mode for selected model (hardware planning) |
-| `P` | Open provider filter popup |
-| `i` | Toggle installed-first sorting (any detected runtime provider) |
-| `d` | Download selected model (provider picker when multiple are available) |
-| `r` | Refresh installed models from runtime providers |
-| `1`-`9` | Toggle provider visibility |
-| `Enter` | Toggle detail view for selected model |
-| `PgUp` / `PgDn` | Scroll by 10 |
-| `g` / `G` | Jump to top / bottom |
-| `q` | Quit |
+| Key                        | Action                                                                |
+|----------------------------|-----------------------------------------------------------------------|
+| `Up` / `Down` or `j` / `k` | Navigate models                                                       |
+| `/`                        | Enter search mode (partial match on name, provider, params, use case) |
+| `Esc` or `Enter`           | Exit search mode                                                      |
+| `Ctrl-U`                   | Clear search                                                          |
+| `f`                        | Cycle fit filter: All, Runnable, Perfect, Good, Marginal              |
+| `a`                        | Cycle availability filter: All, GGUF Avail, Installed                 |
+| `s`                        | Cycle sort column: Score, Params, Mem%, Ctx, Date, Use Case           |
+| `v`                        | Enter Visual mode (select multiple models)                            |
+| `V`                        | Enter Select mode (column-based filtering)                            |
+| `t`                        | Cycle color theme (saved automatically)                               |
+| `p`                        | Open Plan mode for selected model (hardware planning)                 |
+| `P`                        | Open provider filter popup                                            |
+| `U`                        | Open use-case filter popup                                            |
+| `C`                        | Open capability filter popup                                          |
+| `m`                        | Mark selected model for compare                                       |
+| `c`                        | Open compare view (marked vs selected)                                |
+| `x`                        | Clear compare mark                                                    |
+| `i`                        | Toggle installed-first sorting (any detected runtime provider)        |
+| `d`                        | Download selected model (provider picker when multiple are available) |
+| `r`                        | Refresh installed models from runtime providers                       |
+| `Enter`                    | Toggle detail view for selected model                                 |
+| `PgUp` / `PgDn`            | Scroll by 10                                                          |
+| `g` / `G`                  | Jump to top / bottom                                                  |
+| `q`                        | Quit                                                                  |
+
+### Vim-like modes
+
+The TUI uses Vim-inspired modes shown in the bottom-left status bar. The current mode determines which keys are active.
+
+#### Normal mode
+
+The default mode. Navigate, search, filter, and open views. All keys in the table above apply here.
+
+#### Visual mode (`v`)
+
+Select a contiguous range of models for bulk comparison. Press `v` to anchor at the current row, then navigate with `j`/`k` or arrow keys to extend the selection. Selected rows are highlighted.
+
+| Key                 | Action                                                 |
+|---------------------|--------------------------------------------------------|
+| `j` / `k` or arrows | Extend selection up/down                               |
+| `c`                 | Compare all selected models (opens multi-compare view) |
+| `m`                 | Mark current model for two-model compare               |
+| `Esc` or `v`        | Exit Visual mode                                       |
+
+The multi-compare view displays a table where rows are attributes (Score, tok/s, Fit, Mem%, Params, Mode, Context, Quant, etc.) and columns are models. Best values are highlighted. Use `h`/`l` or arrow keys to scroll horizontally if more models are selected than fit on screen.
+
+#### Select mode (`V`)
+
+Column-based filtering. Press `V` (shift-v) to enter Select mode, then use `h`/`l` or arrow keys to move between column headers. The active column is visually highlighted. Press `Enter` or `Space` to activate the appropriate filter for that column:
+
+| Column                        | Filter action                                                             |
+|-------------------------------|---------------------------------------------------------------------------|
+| Inst                          | Cycle availability filter                                                 |
+| Model                         | Enter search mode                                                         |
+| Provider                      | Open provider popup                                                       |
+| Params                        | Open parameter-size bucket popup (<3B, 3-7B, 7-14B, 14-30B, 30-70B, 70B+) |
+| Score, tok/s, Mem%, Ctx, Date | Sort by that column                                                       |
+| Quant                         | Open quantization popup                                                   |
+| Mode                          | Open run-mode popup (GPU, MoE, CPU+GPU, CPU)                              |
+| Fit                           | Cycle fit filter                                                          |
+| Use Case                      | Open use-case popup                                                       |
+
+Row navigation (`j`/`k`) still works in Select mode so you can see the effect of filters as you apply them. Press `Esc` to return to Normal mode.
 
 ### TUI Plan mode (`p`)
 
@@ -96,14 +156,14 @@ Plan mode inverts normal fit analysis: instead of asking "what fits my hardware?
 
 Use `p` on a selected row, then:
 
-| Key | Action |
-|---|---|
-| `Tab` / `j` / `k` | Move between editable fields (Context, Quant, Target TPS) |
-| `Left` / `Right` | Move cursor in current field |
-| Type | Edit current field |
-| `Backspace` / `Delete` | Remove characters |
-| `Ctrl-U` | Clear current field |
-| `Esc` or `q` | Exit Plan mode |
+| Key                    | Action                                                    |
+|------------------------|-----------------------------------------------------------|
+| `Tab` / `j` / `k`      | Move between editable fields (Context, Quant, Target TPS) |
+| `Left` / `Right`       | Move cursor in current field                              |
+| Type                   | Edit current field                                        |
+| `Backspace` / `Delete` | Remove characters                                         |
+| `Ctrl-U`               | Clear current field                                       |
+| `Esc` or `q`           | Exit Plan mode                                            |
 
 Plan mode shows estimates for:
 - minimum and recommended VRAM/RAM/CPU cores
@@ -112,16 +172,20 @@ Plan mode shows estimates for:
 
 ### Themes
 
-Press `t` to cycle through 6 built-in color themes. Your selection is saved automatically to `~/.config/llmfit/theme` and restored on next launch.
+Press `t` to cycle through 10 built-in color themes. Your selection is saved automatically to `~/.config/llmfit/theme` and restored on next launch.
 
-| Theme | Description |
-|---|---|
-| **Default** | Original llmfit colors |
-| **Dracula** | Dark purple background with pastel accents |
-| **Solarized** | Ethan Schoonover's Solarized Dark palette |
-| **Nord** | Arctic, cool blue-gray tones |
-| **Monokai** | Monokai Pro warm syntax colors |
-| **Gruvbox** | Retro groove palette with warm earth tones |
+| Theme                    | Description                                       |
+|--------------------------|---------------------------------------------------|
+| **Default**              | Original llmfit colors                            |
+| **Dracula**              | Dark purple background with pastel accents        |
+| **Solarized**            | Ethan Schoonover's Solarized Dark palette         |
+| **Nord**                 | Arctic, cool blue-gray tones                      |
+| **Monokai**              | Monokai Pro warm syntax colors                    |
+| **Gruvbox**              | Retro groove palette with warm earth tones        |
+| **Catppuccin Latte**     | 🌻 Light theme — harmonious pastel inversion      |
+| **Catppuccin Frappé**    | 🪴 Low-contrast dark — muted, subdued aesthetic   |
+| **Catppuccin Macchiato** | 🌺 Medium-contrast dark — gentle, soothing tones  |
+| **Catppuccin Mocha**     | 🌿 Darkest variant — cozy with color-rich accents |
 
 ### CLI mode
 
@@ -151,6 +215,10 @@ llmfit recommend --json --limit 5
 
 # Recommendations filtered by use case
 llmfit recommend --json --use-case coding --limit 3
+
+# Force a specific runtime (bypass automatic MLX selection on Apple Silicon)
+llmfit recommend --force-runtime llamacpp
+llmfit recommend --force-runtime llamacpp --use-case coding --limit 3
 
 # Plan required hardware for a specific model configuration
 llmfit plan "Qwen/Qwen3-4B-MLX-4bit" --context 8192
@@ -194,6 +262,7 @@ Supported query params for `models`/`models/top`:
 - `sort`: `score|tps|params|mem|ctx|date|use_case`
 - `include_too_tight`: include non-runnable rows (default `false` on `/top`, `true` on `/models`)
 - `max_context`: per-request context cap for memory estimation
+- `force_runtime`: `mlx|llamacpp|vllm` — override automatic runtime selection during analysis
 
 Validate API behavior locally:
 
@@ -278,12 +347,12 @@ llmfit plan "Qwen/Qwen2.5-Coder-0.5B-Instruct" --context 8192 --json
 
 4. **Multi-dimensional scoring** -- Each model is scored across four dimensions (0–100 each):
 
-   | Dimension | What it measures |
-   |---|---|
+   | Dimension   | What it measures                                                               |
+   |-------------|--------------------------------------------------------------------------------|
    | **Quality** | Parameter count, model family reputation, quantization penalty, task alignment |
-   | **Speed** | Estimated tokens/sec based on backend, params, and quantization |
-   | **Fit** | Memory utilization efficiency (sweet spot: 50–80% of available memory) |
-   | **Context** | Context window capability vs target for the use case |
+   | **Speed**   | Estimated tokens/sec based on backend, params, and quantization                |
+   | **Fit**     | Memory utilization efficiency (sweet spot: 50–80% of available memory)         |
+   | **Context** | Context window capability vs target for the use case                           |
 
    Dimensions are combined into a weighted composite score. Weights vary by use-case category (General, Coding, Reasoning, Chat, Multimodal, Embedding). For example, Chat weights Speed higher (0.35) while Reasoning weights Quality higher (0.55). Models are ranked by composite score, with unrunnable models (Too Tight) always at the bottom.
 
@@ -297,15 +366,15 @@ llmfit plan "Qwen/Qwen2.5-Coder-0.5B-Instruct" --context 8192 --json
 
    For unrecognized GPUs, llmfit falls back to per-backend speed constants:
 
-   | Backend | Speed constant |
-   |---|---|
-   | CUDA | 220 |
-   | Metal | 160 |
-   | ROCm | 180 |
-   | SYCL | 100 |
-   | CPU (ARM) | 90 |
-   | CPU (x86) | 70 |
-   | NPU (Ascend) | 390 |
+   | Backend      | Speed constant |
+   |--------------|----------------|
+   | CUDA         | 220            |
+   | Metal        | 160            |
+   | ROCm         | 180            |
+   | SYCL         | 100            |
+   | CPU (ARM)    | 90             |
+   | CPU (x86)    | 70             |
+   | NPU (Ascend) | 390            |
 
    Fallback formula: `K / params_b × quant_speed_multiplier`, with penalties for CPU offload (0.5×), CPU-only (0.3×), and MoE expert switching (0.8×).
 
@@ -361,7 +430,7 @@ src/
   hardware.rs     -- System RAM/CPU/GPU detection (multi-GPU, backend identification)
   models.rs       -- Model database, quantization hierarchy, dynamic quant selection
   fit.rs          -- Multi-dimensional scoring (Q/S/F/C), speed estimation, MoE offloading
-  providers.rs    -- Runtime provider integration (Ollama, llama.cpp, MLX), install detection, pull/download
+  providers.rs    -- Runtime provider integration (Ollama, llama.cpp, MLX, Docker Model Runner, LM Studio), install detection, pull/download
   display.rs      -- Classic CLI table rendering + JSON output
   tui_app.rs      -- TUI application state, filters, navigation
   tui_ui.rs       -- TUI rendering (ratatui)
@@ -418,16 +487,16 @@ cargo publish
 
 ## Dependencies
 
-| Crate | Purpose |
-|---|---|
-| `clap` | CLI argument parsing with derive macros |
-| `sysinfo` | Cross-platform RAM and CPU detection |
-| `serde` / `serde_json` | JSON deserialization for model database |
-| `tabled` | CLI table formatting |
-| `colored` | CLI colored output |
-| `ureq` | HTTP client for runtime/provider API integration |
-| `ratatui` | Terminal UI framework |
-| `crossterm` | Terminal input/output backend for ratatui |
+| Crate                  | Purpose                                          |
+|------------------------|--------------------------------------------------|
+| `clap`                 | CLI argument parsing with derive macros          |
+| `sysinfo`              | Cross-platform RAM and CPU detection             |
+| `serde` / `serde_json` | JSON deserialization for model database          |
+| `tabled`               | CLI table formatting                             |
+| `colored`              | CLI colored output                               |
+| `ureq`                 | HTTP client for runtime/provider API integration |
+| `ratatui`              | Terminal UI framework                            |
+| `crossterm`            | Terminal input/output backend for ratatui        |
 
 ---
 
@@ -438,6 +507,8 @@ llmfit supports multiple local runtime providers:
 - **Ollama** (daemon/API based pulls)
 - **llama.cpp** (direct GGUF downloads from Hugging Face + local cache detection)
 - **MLX** (Apple Silicon / mlx-community model cache + optional server)
+- **Docker Model Runner** (Docker Desktop's built-in model serving)
+- **LM Studio** (local model server with REST API for model management + downloads)
 
 When more than one compatible provider is available for a model, pressing `d` in the TUI opens a provider picker modal.
 
@@ -495,6 +566,53 @@ How it works:
 - downloads GGUF files into the local llama.cpp model cache
 - marks models installed when matching GGUF files are present locally
 
+### Docker Model Runner integration
+
+llmfit integrates with [Docker Model Runner](https://docs.docker.com/desktop/features/model-runner/), Docker Desktop's built-in model serving feature.
+
+Requirements:
+
+- Docker Desktop with Model Runner enabled
+- Default endpoint: `http://localhost:12434`
+
+How it works:
+
+- llmfit queries `GET /engines` to list models available in Docker Model Runner
+- models are matched to the HF database using Ollama-style tag mapping (Docker Model Runner uses `ai/<tag>` naming)
+- pressing `d` in the TUI pulls via `docker model pull`
+
+### Remote Docker Model Runner instances
+
+To connect to Docker Model Runner on a different host or port, set the `DOCKER_MODEL_RUNNER_HOST` environment variable:
+
+```sh
+DOCKER_MODEL_RUNNER_HOST="http://192.168.1.100:12434" llmfit
+```
+
+### LM Studio integration
+
+llmfit integrates with [LM Studio](https://lmstudio.ai) as a local model server with built-in model download capabilities.
+
+Requirements:
+
+- LM Studio must be running with its local server enabled
+- Default endpoint: `http://127.0.0.1:1234`
+
+How it works:
+
+- llmfit queries `GET /v1/models` to list models available in LM Studio
+- pressing `d` in the TUI triggers a download via `POST /api/v1/models/download`
+- download progress is tracked by polling `GET /api/v1/models/download-status`
+- LM Studio accepts HuggingFace model names directly, so no name mapping is needed
+
+### Remote LM Studio instances
+
+To connect to LM Studio on a different host or port, set the `LMSTUDIO_HOST` environment variable:
+
+```sh
+LMSTUDIO_HOST="http://192.168.1.100:1234" llmfit
+```
+
 ### Model name mapping
 
 llmfit's database uses HuggingFace model names (e.g. `Qwen/Qwen2.5-Coder-14B-Instruct`) while Ollama uses its own naming scheme (e.g. `qwen2.5-coder:14b`). llmfit maintains an accurate mapping table between the two so that install detection and pulls resolve to the correct model. Each mapping is exact — `qwen2.5-coder:14b` maps to the Coder model, not the base `qwen2.5:14b`.
@@ -507,19 +625,33 @@ llmfit's database uses HuggingFace model names (e.g. `Qwen/Qwen2.5-Coder-14B-Ins
 - **macOS (Apple Silicon)** -- Full support. Detects unified memory via `system_profiler`. VRAM = system RAM (shared pool). Models run via Metal GPU acceleration.
 - **macOS (Intel)** -- RAM and CPU detection works. Discrete GPU detection if `nvidia-smi` available.
 - **Windows** -- RAM and CPU detection works. NVIDIA GPU detection via `nvidia-smi` if installed.
+- **Android / Termux / PRoot** -- CPU and RAM detection usually work, but GPU autodetection is not currently supported. Mobile GPUs such as Adreno typically are not visible through the desktop/server probing interfaces llmfit uses.
 
 ### GPU support
 
-| Vendor | Detection method | VRAM reporting |
-|---|---|---|
-| NVIDIA | `nvidia-smi` | Exact dedicated VRAM |
-| AMD | `rocm-smi` | Detected (VRAM may be unknown) |
-| Intel Arc (discrete) | sysfs (`mem_info_vram_total`) | Exact dedicated VRAM |
-| Intel Arc (integrated) | `lspci` | Shared system memory |
-| Apple Silicon | `system_profiler` | Unified memory (= system RAM) |
-| Ascend | `npu-smi` | Detected (VRAM may be unknown) |
+| Vendor                 | Detection method              | VRAM reporting                 |
+|------------------------|-------------------------------|--------------------------------|
+| NVIDIA                 | `nvidia-smi`                  | Exact dedicated VRAM           |
+| AMD                    | `rocm-smi`                    | Detected (VRAM may be unknown) |
+| Intel Arc (discrete)   | sysfs (`mem_info_vram_total`) | Exact dedicated VRAM           |
+| Intel Arc (integrated) | `lspci`                       | Shared system memory           |
+| Apple Silicon          | `system_profiler`             | Unified memory (= system RAM)  |
+| Ascend                 | `npu-smi`                     | Detected (VRAM may be unknown) |
 
 If autodetection fails or reports incorrect values, use `--memory=<SIZE>` to override (see [GPU memory override](#gpu-memory-override) above).
+
+### Android / Termux note
+
+On Android setups such as **Termux + PRoot**, llmfit usually cannot see mobile GPUs through the standard Linux detection paths (`nvidia-smi`, `rocm-smi`, DRM/sysfs, `lspci`, etc.). In those environments, "no GPU detected" is expected with the current implementation.
+
+If you still want GPU-style recommendations on a unified-memory phone or tablet, use a manual memory override:
+
+```sh
+llmfit --memory=8G fit -n 20
+llmfit recommend --json --memory=8G --limit 10
+```
+
+This is a workaround for recommendation/scoring only; it does not provide true Android GPU runtime detection.
 
 ---
 

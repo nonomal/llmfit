@@ -37,6 +37,7 @@ struct ModelsQuery {
     sort: Option<String>,
     include_too_tight: Option<bool>,
     max_context: Option<u32>,
+    force_runtime: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -271,11 +272,12 @@ fn filtered_fits(
     let use_case_filter = parse_use_case(query.use_case.as_deref())?;
 
     let context_limit = query.max_context.or(state.context_limit);
+    let forced_rt = parse_force_runtime(query.force_runtime.as_deref())?;
     let mut fits: Vec<ModelFit> = state
         .models
         .iter()
         .filter(|m| backend_compatible(m, &state.specs))
-        .map(|m| ModelFit::analyze_with_context_limit(m, &state.specs, context_limit))
+        .map(|m| ModelFit::analyze_with_forced_runtime(m, &state.specs, context_limit, forced_rt))
         .collect();
 
     let is_apple_silicon = state.specs.backend == GpuBackend::Metal && state.specs.unified_memory;
@@ -311,6 +313,7 @@ fn filtered_fits(
     match runtime_filter {
         RuntimeFilter::Any => {}
         RuntimeFilter::Mlx => fits.retain(|f| f.runtime == InferenceRuntime::Mlx),
+        RuntimeFilter::Vllm => fits.retain(|f| f.runtime == InferenceRuntime::Vllm),
         RuntimeFilter::LlamaCpp => {
             fits.retain(|f| f.runtime == InferenceRuntime::LlamaCpp);
         }
@@ -333,6 +336,7 @@ enum RuntimeFilter {
     Any,
     Mlx,
     LlamaCpp,
+    Vllm,
 }
 
 fn parse_sort(raw: Option<&str>) -> Result<SortColumn, ApiError> {
@@ -379,13 +383,32 @@ fn parse_runtime(raw: Option<&str>) -> Result<RuntimeFilter, ApiError> {
         "any" => RuntimeFilter::Any,
         "mlx" => RuntimeFilter::Mlx,
         "llamacpp" | "llama.cpp" | "llama_cpp" => RuntimeFilter::LlamaCpp,
+        "vllm" => RuntimeFilter::Vllm,
         _ => {
             return Err(ApiError::bad_request(
-                "invalid runtime value: use any|mlx|llamacpp",
+                "invalid runtime value: use any|mlx|llamacpp|vllm",
             ));
         }
     };
     Ok(runtime)
+}
+
+fn parse_force_runtime(
+    raw: Option<&str>,
+) -> Result<Option<llmfit_core::fit::InferenceRuntime>, ApiError> {
+    let Some(value) = raw else {
+        return Ok(None);
+    };
+    match value.trim().to_lowercase().as_str() {
+        "mlx" => Ok(Some(llmfit_core::fit::InferenceRuntime::Mlx)),
+        "llamacpp" | "llama.cpp" | "llama_cpp" => {
+            Ok(Some(llmfit_core::fit::InferenceRuntime::LlamaCpp))
+        }
+        "vllm" => Ok(Some(llmfit_core::fit::InferenceRuntime::Vllm)),
+        _ => Err(ApiError::bad_request(
+            "invalid force_runtime value: use mlx|llamacpp|vllm",
+        )),
+    }
 }
 
 fn parse_use_case(raw: Option<&str>) -> Result<Option<UseCase>, ApiError> {
@@ -457,6 +480,7 @@ fn runtime_code(runtime: InferenceRuntime) -> &'static str {
     match runtime {
         InferenceRuntime::Mlx => "mlx",
         InferenceRuntime::LlamaCpp => "llamacpp",
+        InferenceRuntime::Vllm => "vllm",
     }
 }
 
@@ -518,6 +542,8 @@ fn fit_to_json(fit: &ModelFit) -> serde_json::Value {
         "best_quant": fit.best_quant,
         "memory_required_gb": round2(fit.memory_required_gb),
         "memory_available_gb": round2(fit.memory_available_gb),
+        "moe_offloaded_gb": fit.moe_offloaded_gb.map(round2),
+        "total_memory_gb": round2(fit.memory_required_gb + fit.moe_offloaded_gb.unwrap_or(0.0)),
         "utilization_pct": round1(fit.utilization_pct),
         "notes": fit.notes,
         "gguf_sources": fit.model.gguf_sources,
