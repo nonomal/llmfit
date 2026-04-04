@@ -2894,30 +2894,50 @@ GPU id = 1 (NVIDIA GeForce RTX 4090)
     #[test]
     fn test_is_integrated_gpu_name() {
         // Intel integrated
-        assert!(SystemSpecs::is_integrated_gpu_name("Intel(R) UHD Graphics 770"));
-        assert!(SystemSpecs::is_integrated_gpu_name("Intel(R) HD Graphics 630"));
-        assert!(SystemSpecs::is_integrated_gpu_name("Intel(R) Iris(R) Xe Graphics"));
-        assert!(SystemSpecs::is_integrated_gpu_name("Intel(R) Iris(R) Plus Graphics"));
+        assert!(SystemSpecs::is_integrated_gpu_name(
+            "Intel(R) UHD Graphics 770"
+        ));
+        assert!(SystemSpecs::is_integrated_gpu_name(
+            "Intel(R) HD Graphics 630"
+        ));
+        assert!(SystemSpecs::is_integrated_gpu_name(
+            "Intel(R) Iris(R) Xe Graphics"
+        ));
+        assert!(SystemSpecs::is_integrated_gpu_name(
+            "Intel(R) Iris(R) Plus Graphics"
+        ));
         // Intel discrete should NOT match
-        assert!(!SystemSpecs::is_integrated_gpu_name("Intel(R) Arc(TM) A770"));
-        assert!(!SystemSpecs::is_integrated_gpu_name("Intel(R) Arc(TM) B580"));
+        assert!(!SystemSpecs::is_integrated_gpu_name(
+            "Intel(R) Arc(TM) A770"
+        ));
+        assert!(!SystemSpecs::is_integrated_gpu_name(
+            "Intel(R) Arc(TM) B580"
+        ));
     }
 
     #[test]
     fn test_is_integrated_gpu_name_amd() {
         // AMD integrated (generic "Radeon Graphics" with no RX/PRO)
-        assert!(SystemSpecs::is_integrated_gpu_name("AMD Radeon(TM) Graphics"));
+        assert!(SystemSpecs::is_integrated_gpu_name(
+            "AMD Radeon(TM) Graphics"
+        ));
         assert!(SystemSpecs::is_integrated_gpu_name("AMD Radeon Graphics"));
         // AMD discrete should NOT match
-        assert!(!SystemSpecs::is_integrated_gpu_name("AMD Radeon RX 7900 XTX"));
+        assert!(!SystemSpecs::is_integrated_gpu_name(
+            "AMD Radeon RX 7900 XTX"
+        ));
         assert!(!SystemSpecs::is_integrated_gpu_name("AMD Radeon Pro W7900"));
     }
 
     #[test]
     fn test_is_integrated_gpu_name_nvidia() {
         // NVIDIA GPUs are never integrated in the traditional sense
-        assert!(!SystemSpecs::is_integrated_gpu_name("NVIDIA GeForce RTX 4090"));
-        assert!(!SystemSpecs::is_integrated_gpu_name("NVIDIA GeForce GTX 1650"));
+        assert!(!SystemSpecs::is_integrated_gpu_name(
+            "NVIDIA GeForce RTX 4090"
+        ));
+        assert!(!SystemSpecs::is_integrated_gpu_name(
+            "NVIDIA GeForce GTX 1650"
+        ));
     }
 
     #[test]
