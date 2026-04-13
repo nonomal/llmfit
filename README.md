@@ -26,6 +26,7 @@ Ships with an interactive TUI (default) and a classic CLI mode. Supports multi-G
 > **Sister projects:**
 > - [sympozium](https://github.com/sympozium-ai/sympozium/) — managing agents in Kubernetes.
 > - [llmserve](https://github.com/AlexsJones/llmserve) — a simple TUI for serving local LLM models. Pick a model, pick a backend, serve it.
+> - [llama-panel](https://github.com/AlexsJones/llama-panel) — a native macOS app for managing local llama-server instances.
 
 ![demo](demo.gif)
 
