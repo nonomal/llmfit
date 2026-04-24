@@ -1131,7 +1131,7 @@ fn estimate_tps(
                 // Only apply penalty when model actually fits in VRAM (util <= 1.0)
                 // AND utilization is above the threshold. Below it, the model fits
                 // easily with plenty of L2 cache room — no pressure.
-                if util > 1.0 || util < VRAM_PRESSURE_UTIL_THRESHOLD {
+                if !(VRAM_PRESSURE_UTIL_THRESHOLD..=1.0).contains(&util) {
                     1.0
                 } else {
                     // Expert density: ratio of inactive to total experts.

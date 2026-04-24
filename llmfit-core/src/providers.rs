@@ -663,11 +663,11 @@ impl LlamaCppProvider {
     pub fn delete_model(&self, model_tag: &str) -> Result<(), String> {
         let tag_lower = model_tag.to_lowercase();
         for path in self.list_gguf_files() {
-            if let Some(stem) = path.file_stem().and_then(|s| s.to_str()) {
-                if stem.to_lowercase() == tag_lower {
-                    return std::fs::remove_file(&path)
-                        .map_err(|e| format!("Failed to delete {}: {}", path.display(), e));
-                }
+            if let Some(stem) = path.file_stem().and_then(|s| s.to_str())
+                && stem.to_lowercase() == tag_lower
+            {
+                return std::fs::remove_file(&path)
+                    .map_err(|e| format!("Failed to delete {}: {}", path.display(), e));
             }
         }
         Err(format!("Model file not found for '{}'", model_tag))

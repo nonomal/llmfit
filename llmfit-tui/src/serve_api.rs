@@ -511,13 +511,13 @@ async fn start_download(
 
     {
         let dl = state.active_download.read().await;
-        if let Some(ref d) = *dl {
-            if d.status == "pulling" {
-                return Err(ApiError::bad_request(format!(
-                    "download '{}' already in progress; wait for it to complete or error",
-                    d.id
-                )));
-            }
+        if let Some(ref d) = *dl
+            && d.status == "pulling"
+        {
+            return Err(ApiError::bad_request(format!(
+                "download '{}' already in progress; wait for it to complete or error",
+                d.id
+            )));
         }
     }
 
