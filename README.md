@@ -31,7 +31,7 @@ Ships with an interactive TUI (default) and a classic CLI mode. Supports multi-G
 > - [llmserve](https://github.com/AlexsJones/llmserve) — a simple TUI for serving local LLM models. Pick a model, pick a backend, serve it.
 > - [llama-panel](https://github.com/AlexsJones/llama-panel) — a native macOS app for managing local llama-server instances.
 
-![demo](demo.gif)
+![demo](assets/demo.gif)
 
 ---
 
@@ -193,7 +193,7 @@ Plan mode shows estimates for:
 
 Press `S` to open the hardware simulation popup. Override RAM, VRAM, and CPU core count to see which models would fit on different target hardware. All model scores, fit levels, and speed estimates are recalculated instantly against the simulated specs.
 
-![Hardware Simulation](simulation.png)
+![Hardware Simulation](assets/simulation.png)
 
 | Key                    | Action                                  |
 |------------------------|-----------------------------------------|
@@ -588,7 +588,6 @@ curl -sL https://opensource.org/license/MIT -o LICENSE
 ```
 
 - `data/hf_models.json` is committed. It is embedded at compile time and must be present in the published crate.
-- The `exclude` list in `Cargo.toml` keeps `target/`, `scripts/`, and `demo.gif` out of the published crate to keep the download small.
 
 To publish updates:
 

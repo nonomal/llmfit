@@ -28,7 +28,7 @@
 > - [llmserve](https://github.com/AlexsJones/llmserve) — 一个简单的 TUI，用于服务本地 LLM 模型。选择模型、选择后端、开始服务。
 > - [llama-panel](https://github.com/AlexsJones/llama-panel) — 用于管理本地 llama-server 实例的原生 macOS 应用。
 
-![演示](demo.gif)
+![演示](assets/demo.gif)
 
 ---
 
@@ -188,7 +188,7 @@ Plan 模式显示以下估算：
 
 在 TUI 中按 `S` 打开硬件模拟弹窗。覆盖 RAM、VRAM 和 CPU 核心数，查看哪些模型适合不同的目标硬件。所有模型评分、适配等级和速度估算会根据模拟配置即时重新计算。
 
-![硬件模拟](simulation.png)
+![硬件模拟](assets/simulation.png)
 
 | 按键                   | 操作                                    |
 |------------------------|-----------------------------------------|
@@ -535,7 +535,6 @@ curl -sL https://opensource.org/license/MIT -o LICENSE
 ```
 
 - `data/hf_models.json` 已提交。它在编译时嵌入，必须存在于发布的 crate 中。
-- `Cargo.toml` 中的 `exclude` 列表将 `target/`、`scripts/` 和 `demo.gif` 排除在发布的 crate 之外，以减小下载体积。
 
 发布更新：
 
