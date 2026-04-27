@@ -1,3 +1,4 @@
+pub mod benchmarks;
 pub mod fit;
 pub mod hardware;
 pub mod models;

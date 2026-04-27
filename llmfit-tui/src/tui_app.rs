@@ -35,6 +35,7 @@ pub enum InputMode {
     AdvancedConfig,
     DownloadManager,
     FilterPopup,
+    Benchmarks,
 }
 
 /// Fields in the Filter Popup modal.
@@ -570,6 +571,16 @@ pub struct App {
     /// hardware — shown in the system bar so users aren't left wondering
     /// why the list looks shorter than expected.
     pub backend_hidden_count: usize,
+
+    // Benchmarks view (localmaxxing.com)
+    pub show_benchmarks: bool,
+    pub bench_entries: Vec<llmfit_core::benchmarks::LeaderboardEntry>,
+    pub bench_cursor: usize,
+    pub bench_scroll: usize,
+    pub bench_loading: bool,
+    pub bench_error: Option<String>,
+    pub bench_total: u64,
+    pub bench_api_key: Option<String>,
 }
 
 impl App {
@@ -925,6 +936,15 @@ impl App {
             filter_mem_pct_max_input: String::new(),
             filter_sort_ascending: sort_ascending,
             filter_snapshot: None,
+            // Benchmarks
+            show_benchmarks: false,
+            bench_entries: Vec::new(),
+            bench_cursor: 0,
+            bench_scroll: 0,
+            bench_loading: false,
+            bench_error: None,
+            bench_total: 0,
+            bench_api_key: std::env::var("LOCALMAXXING_API_KEY").ok(),
         };
 
         // Restore persisted range filters
@@ -1424,6 +1444,7 @@ impl App {
         self.show_compare = false;
         self.show_multi_compare = false;
         self.show_detail = false;
+        self.show_benchmarks = false;
         self.show_downloads = !self.show_downloads;
         if self.show_downloads {
             self.input_mode = InputMode::DownloadManager;
@@ -1534,6 +1555,7 @@ impl App {
         self.show_plan = false;
         self.show_compare = false;
         self.show_downloads = false;
+        self.show_benchmarks = false;
         self.show_detail = !self.show_detail;
     }
 
@@ -1594,6 +1616,7 @@ impl App {
         self.show_detail = false;
         self.show_plan = false;
         self.show_downloads = false;
+        self.show_benchmarks = false;
         self.show_compare = true;
     }
 
@@ -1606,6 +1629,7 @@ impl App {
         self.show_detail = false;
         self.show_compare = false;
         self.show_downloads = false;
+        self.show_benchmarks = false;
         self.show_plan = true;
         self.input_mode = InputMode::Plan;
         self.plan_model_idx = Some(fit_idx);
@@ -1624,6 +1648,65 @@ impl App {
         self.plan_estimate = None;
         self.plan_error = None;
         self.input_mode = InputMode::Normal;
+    }
+
+    // ── Benchmarks view ──────────────────────────────────────────────
+
+    pub fn open_benchmarks(&mut self) {
+        self.show_detail = false;
+        self.show_compare = false;
+        self.show_multi_compare = false;
+        self.show_plan = false;
+        self.show_downloads = false;
+        self.show_benchmarks = true;
+        self.input_mode = InputMode::Benchmarks;
+        self.bench_cursor = 0;
+        self.bench_scroll = 0;
+
+        // Fetch if we don't have data yet
+        if self.bench_entries.is_empty() && !self.bench_loading {
+            self.fetch_benchmarks();
+        }
+    }
+
+    pub fn close_benchmarks(&mut self) {
+        self.show_benchmarks = false;
+        self.input_mode = InputMode::Normal;
+    }
+
+    pub fn fetch_benchmarks(&mut self) {
+        self.bench_loading = true;
+        self.bench_error = None;
+
+        let key = self.bench_api_key.as_deref();
+        match llmfit_core::benchmarks::fetch_leaderboard(&self.specs, key, 100) {
+            Ok(resp) => {
+                self.bench_total = resp.total;
+                self.bench_entries = resp.rows;
+                self.bench_loading = false;
+            }
+            Err(e) => {
+                self.bench_error = Some(e);
+                self.bench_loading = false;
+            }
+        }
+    }
+
+    pub fn bench_move_up(&mut self) {
+        if self.bench_cursor > 0 {
+            self.bench_cursor -= 1;
+        }
+    }
+
+    pub fn bench_move_down(&mut self) {
+        if !self.bench_entries.is_empty() && self.bench_cursor < self.bench_entries.len() - 1 {
+            self.bench_cursor += 1;
+        }
+    }
+
+    pub fn bench_refresh(&mut self) {
+        self.bench_entries.clear();
+        self.fetch_benchmarks();
     }
 
     pub fn plan_next_field(&mut self) {
@@ -1958,6 +2041,7 @@ impl App {
         self.show_plan = false;
         self.show_compare = false;
         self.show_downloads = false;
+        self.show_benchmarks = false;
         self.show_multi_compare = true;
     }
 

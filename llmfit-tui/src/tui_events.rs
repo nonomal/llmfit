@@ -35,6 +35,7 @@ pub fn handle_events(app: &mut App) -> std::io::Result<bool> {
             InputMode::AdvancedConfig => handle_advanced_config_mode(app, key),
             InputMode::DownloadManager => handle_download_manager_mode(app, key),
             InputMode::FilterPopup => handle_filter_popup_mode(app, key),
+            InputMode::Benchmarks => handle_benchmarks_mode(app, key),
         }
         return Ok(true);
     }
@@ -148,6 +149,9 @@ fn handle_normal_mode(app: &mut App, key: KeyEvent) {
 
         // Download manager view
         KeyCode::Char('D') => app.toggle_downloads(),
+
+        // Benchmarks view (localmaxxing.com)
+        KeyCode::Char('b') => app.open_benchmarks(),
 
         // Advanced Config popup
         KeyCode::Char('A') => app.open_advanced_config_popup(),
@@ -594,6 +598,16 @@ fn handle_filter_popup_mode(app: &mut App, key: KeyEvent) {
         // Numeric input
         KeyCode::Char(c) if c.is_ascii_digit() || c == '.' => app.filter_input(c),
 
+        _ => {}
+    }
+}
+
+fn handle_benchmarks_mode(app: &mut App, key: KeyEvent) {
+    match key.code {
+        KeyCode::Esc | KeyCode::Char('q') | KeyCode::Char('b') => app.close_benchmarks(),
+        KeyCode::Up | KeyCode::Char('k') => app.bench_move_up(),
+        KeyCode::Down | KeyCode::Char('j') => app.bench_move_down(),
+        KeyCode::Char('r') => app.bench_refresh(),
         _ => {}
     }
 }

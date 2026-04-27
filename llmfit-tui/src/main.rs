@@ -165,6 +165,11 @@ struct Cli {
     /// Do not auto-start the background dashboard server
     #[arg(long, global = true)]
     no_dashboard: bool,
+
+    /// localmaxxing.com API key for community benchmark data.
+    /// Falls back to LOCALMAXXING_API_KEY env var.
+    #[arg(long, value_name = "KEY", env = "LOCALMAXXING_API_KEY")]
+    api_key: Option<String>,
 }
 
 #[derive(Subcommand)]
@@ -1093,7 +1098,11 @@ fn run_diff(
     }
 }
 
-fn run_tui(overrides: &HardwareOverrides, context_limit: Option<u32>) -> std::io::Result<()> {
+fn run_tui(
+    overrides: &HardwareOverrides,
+    context_limit: Option<u32>,
+    api_key: Option<String>,
+) -> std::io::Result<()> {
     // Setup terminal
     crossterm::terminal::enable_raw_mode()?;
     let mut stdout = std::io::stdout();
@@ -1111,6 +1120,9 @@ fn run_tui(overrides: &HardwareOverrides, context_limit: Option<u32>) -> std::io
     let specs = detect_specs(overrides);
     draw_boot_screen(&mut terminal, "Loading providers and models...")?;
     let mut app = tui_app::App::with_specs_and_context(specs, context_limit);
+    if api_key.is_some() {
+        app.bench_api_key = api_key;
+    }
 
     // Main loop
     loop {
@@ -2054,7 +2066,7 @@ fn main() {
     }
 
     // Default: launch TUI
-    if let Err(e) = run_tui(&overrides, context_limit) {
+    if let Err(e) = run_tui(&overrides, context_limit, cli.api_key) {
         eprintln!("Error running TUI: {}", e);
         std::process::exit(1);
     }
