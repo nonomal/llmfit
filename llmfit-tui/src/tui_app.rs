@@ -581,6 +581,11 @@ pub struct App {
     pub bench_error: Option<String>,
     pub bench_total: u64,
     pub bench_api_key: Option<String>,
+    /// Label for the currently selected hardware (None = auto-detected).
+    pub bench_hw_label: Option<String>,
+    /// Index into HardwarePreset::all() when the picker is open.
+    pub bench_hw_picker_cursor: usize,
+    pub bench_hw_picker_open: bool,
 }
 
 impl App {
@@ -945,6 +950,9 @@ impl App {
             bench_error: None,
             bench_total: 0,
             bench_api_key: std::env::var("LOCALMAXXING_API_KEY").ok(),
+            bench_hw_label: None,
+            bench_hw_picker_cursor: 0,
+            bench_hw_picker_open: false,
         };
 
         // Restore persisted range filters
@@ -1707,6 +1715,64 @@ impl App {
     pub fn bench_refresh(&mut self) {
         self.bench_entries.clear();
         self.fetch_benchmarks();
+    }
+
+    pub fn open_bench_hw_picker(&mut self) {
+        self.bench_hw_picker_open = true;
+        self.bench_hw_picker_cursor = 0;
+    }
+
+    pub fn close_bench_hw_picker(&mut self) {
+        self.bench_hw_picker_open = false;
+    }
+
+    pub fn bench_hw_picker_up(&mut self) {
+        if self.bench_hw_picker_cursor > 0 {
+            self.bench_hw_picker_cursor -= 1;
+        }
+    }
+
+    pub fn bench_hw_picker_down(&mut self) {
+        let presets = llmfit_core::benchmarks::HardwarePreset::all();
+        // +1 for the "My Hardware (auto)" entry at position 0
+        let max = presets.len(); // last valid index = presets.len() (0..=presets.len())
+        if self.bench_hw_picker_cursor < max {
+            self.bench_hw_picker_cursor += 1;
+        }
+    }
+
+    pub fn bench_hw_picker_select(&mut self) {
+        let presets = llmfit_core::benchmarks::HardwarePreset::all();
+        self.bench_hw_picker_open = false;
+
+        if self.bench_hw_picker_cursor == 0 {
+            // "My Hardware (auto)" — reset to detected hardware
+            self.bench_hw_label = None;
+            self.bench_entries.clear();
+            self.fetch_benchmarks();
+        } else {
+            let preset = &presets[self.bench_hw_picker_cursor - 1];
+            self.bench_hw_label = Some(preset.label.to_string());
+            self.bench_entries.clear();
+            self.bench_loading = true;
+            self.bench_error = None;
+
+            let key = self.bench_api_key.as_deref();
+            match llmfit_core::benchmarks::fetch_leaderboard_for_preset(preset, key, 100) {
+                Ok(resp) => {
+                    self.bench_total = resp.total;
+                    self.bench_entries = resp.rows;
+                    self.bench_loading = false;
+                }
+                Err(e) => {
+                    self.bench_error = Some(e);
+                    self.bench_loading = false;
+                }
+            }
+        }
+
+        self.bench_cursor = 0;
+        self.bench_scroll = 0;
     }
 
     pub fn plan_next_field(&mut self) {

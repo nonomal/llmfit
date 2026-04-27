@@ -311,6 +311,229 @@ pub fn fetch_leaderboard(
     Ok(body)
 }
 
+// ── Hardware presets ─────────────────────────────────────────────────
+
+/// A selectable hardware configuration for browsing benchmarks.
+#[derive(Debug, Clone)]
+pub struct HardwarePreset {
+    pub label: &'static str,
+    pub hw_class: &'static str,
+    pub hardware_name: Option<&'static str>,
+    pub mem_tier: Option<u32>,
+}
+
+impl HardwarePreset {
+    /// Returns the built-in list of popular hardware presets.
+    pub fn all() -> &'static [HardwarePreset] {
+        &HARDWARE_PRESETS
+    }
+}
+
+static HARDWARE_PRESETS: [HardwarePreset; 27] = [
+    // NVIDIA consumer
+    HardwarePreset {
+        label: "RTX 5090 (32 GB)",
+        hw_class: "DISCRETE_GPU",
+        hardware_name: Some("RTX 5090"),
+        mem_tier: Some(32),
+    },
+    HardwarePreset {
+        label: "RTX 5080 (16 GB)",
+        hw_class: "DISCRETE_GPU",
+        hardware_name: Some("RTX 5080"),
+        mem_tier: Some(16),
+    },
+    HardwarePreset {
+        label: "RTX 4090 (24 GB)",
+        hw_class: "DISCRETE_GPU",
+        hardware_name: Some("RTX 4090"),
+        mem_tier: Some(24),
+    },
+    HardwarePreset {
+        label: "RTX 4080 (16 GB)",
+        hw_class: "DISCRETE_GPU",
+        hardware_name: Some("RTX 4080"),
+        mem_tier: Some(16),
+    },
+    HardwarePreset {
+        label: "RTX 4070 Ti (12 GB)",
+        hw_class: "DISCRETE_GPU",
+        hardware_name: Some("RTX 4070"),
+        mem_tier: Some(12),
+    },
+    HardwarePreset {
+        label: "RTX 3090 (24 GB)",
+        hw_class: "DISCRETE_GPU",
+        hardware_name: Some("RTX 3090"),
+        mem_tier: Some(24),
+    },
+    HardwarePreset {
+        label: "RTX 3080 (10 GB)",
+        hw_class: "DISCRETE_GPU",
+        hardware_name: Some("RTX 3080"),
+        mem_tier: Some(12),
+    },
+    HardwarePreset {
+        label: "RTX 3060 (12 GB)",
+        hw_class: "DISCRETE_GPU",
+        hardware_name: Some("RTX 3060"),
+        mem_tier: Some(12),
+    },
+    // NVIDIA datacenter
+    HardwarePreset {
+        label: "A100 (80 GB)",
+        hw_class: "DISCRETE_GPU",
+        hardware_name: Some("A100"),
+        mem_tier: Some(80),
+    },
+    HardwarePreset {
+        label: "A100 (40 GB)",
+        hw_class: "DISCRETE_GPU",
+        hardware_name: Some("A100"),
+        mem_tier: Some(48),
+    },
+    HardwarePreset {
+        label: "H100 (80 GB)",
+        hw_class: "DISCRETE_GPU",
+        hardware_name: Some("H100"),
+        mem_tier: Some(80),
+    },
+    HardwarePreset {
+        label: "L40S (48 GB)",
+        hw_class: "DISCRETE_GPU",
+        hardware_name: Some("L40S"),
+        mem_tier: Some(48),
+    },
+    HardwarePreset {
+        label: "T4 (16 GB)",
+        hw_class: "DISCRETE_GPU",
+        hardware_name: Some("T4"),
+        mem_tier: Some(16),
+    },
+    // AMD
+    HardwarePreset {
+        label: "RX 7900 XTX (24 GB)",
+        hw_class: "DISCRETE_GPU",
+        hardware_name: Some("7900 XTX"),
+        mem_tier: Some(24),
+    },
+    HardwarePreset {
+        label: "RX 7900 XT (20 GB)",
+        hw_class: "DISCRETE_GPU",
+        hardware_name: Some("7900 XT"),
+        mem_tier: Some(24),
+    },
+    HardwarePreset {
+        label: "MI300X (192 GB)",
+        hw_class: "DISCRETE_GPU",
+        hardware_name: Some("MI300X"),
+        mem_tier: Some(128),
+    },
+    // Apple Silicon
+    HardwarePreset {
+        label: "Apple M4 Max (128 GB)",
+        hw_class: "UNIFIED",
+        hardware_name: Some("M4 Max"),
+        mem_tier: Some(128),
+    },
+    HardwarePreset {
+        label: "Apple M4 Max (64 GB)",
+        hw_class: "UNIFIED",
+        hardware_name: Some("M4 Max"),
+        mem_tier: Some(48),
+    },
+    HardwarePreset {
+        label: "Apple M4 Pro (48 GB)",
+        hw_class: "UNIFIED",
+        hardware_name: Some("M4 Pro"),
+        mem_tier: Some(48),
+    },
+    HardwarePreset {
+        label: "Apple M4 Pro (24 GB)",
+        hw_class: "UNIFIED",
+        hardware_name: Some("M4 Pro"),
+        mem_tier: Some(24),
+    },
+    HardwarePreset {
+        label: "Apple M3 Max (128 GB)",
+        hw_class: "UNIFIED",
+        hardware_name: Some("M3 Max"),
+        mem_tier: Some(128),
+    },
+    HardwarePreset {
+        label: "Apple M3 Max (96 GB)",
+        hw_class: "UNIFIED",
+        hardware_name: Some("M3 Max"),
+        mem_tier: Some(96),
+    },
+    HardwarePreset {
+        label: "Apple M2 Ultra (192 GB)",
+        hw_class: "UNIFIED",
+        hardware_name: Some("M2 Ultra"),
+        mem_tier: Some(128),
+    },
+    HardwarePreset {
+        label: "Apple M2 Max (96 GB)",
+        hw_class: "UNIFIED",
+        hardware_name: Some("M2 Max"),
+        mem_tier: Some(96),
+    },
+    HardwarePreset {
+        label: "Apple M2 Pro (32 GB)",
+        hw_class: "UNIFIED",
+        hardware_name: Some("M2 Pro"),
+        mem_tier: Some(32),
+    },
+    HardwarePreset {
+        label: "Apple M1 Max (64 GB)",
+        hw_class: "UNIFIED",
+        hardware_name: Some("M1 Max"),
+        mem_tier: Some(48),
+    },
+    // CPU only
+    HardwarePreset {
+        label: "CPU Only",
+        hw_class: "CPU_ONLY",
+        hardware_name: None,
+        mem_tier: None,
+    },
+];
+
+/// Fetch leaderboard for a specific hardware preset.
+pub fn fetch_leaderboard_for_preset(
+    preset: &HardwarePreset,
+    api_key: Option<&str>,
+    limit: u32,
+) -> Result<LeaderboardResponse, String> {
+    let mut params: Vec<(&str, String)> = Vec::new();
+    params.push(("hwClass", preset.hw_class.to_string()));
+    if let Some(name) = preset.hardware_name {
+        params.push(("hardwareName", name.to_string()));
+    }
+    if let Some(tier) = preset.mem_tier {
+        params.push(("memTier", tier.to_string()));
+    }
+    params.push(("limit", limit.to_string()));
+
+    let query: String = params
+        .iter()
+        .map(|(k, v)| format!("{}={}", k, urlencoded(v)))
+        .collect::<Vec<_>>()
+        .join("&");
+
+    let url = format!("{}/leaderboard?{}", BASE_URL, query);
+    let mut req = ureq::get(&url);
+    if let Some(key) = api_key {
+        req = req.header("Authorization", &format!("Bearer {}", key));
+    }
+    let resp = req.call().map_err(|e| format!("HTTP error: {}", e))?;
+    let body: LeaderboardResponse = resp
+        .into_body()
+        .read_json()
+        .map_err(|e| format!("JSON parse error: {}", e))?;
+    Ok(body)
+}
+
 /// Minimal percent-encoding for query values.
 fn urlencoded(s: &str) -> String {
     let mut out = String::with_capacity(s.len());

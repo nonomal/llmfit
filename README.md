@@ -292,8 +292,11 @@ Data is sourced from [localmaxxing.com](https://localmaxxing.com), a community b
 | Key                    | Action                                  |
 |------------------------|-----------------------------------------|
 | `j` / `k` or arrows   | Navigate results                        |
+| `H`                    | Open hardware picker (browse any GPU)   |
 | `r`                    | Refresh / re-fetch from API             |
 | `b` / `q` / `Esc`     | Close and return to model table         |
+
+Press `H` to open the hardware picker — a scrollable list of 27 popular GPUs and chips (RTX 5090 through CPU-only, plus Apple Silicon M1–M4 variants, AMD RX/MI series, and NVIDIA datacenter cards). Select one to instantly load benchmarks for that hardware, even if it's not what you're running on. Select "My Hardware (auto-detect)" to go back to your own system.
 
 #### API key setup
 

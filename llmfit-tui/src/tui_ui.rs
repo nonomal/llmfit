@@ -2815,7 +2815,7 @@ fn status_keys_and_mode(app: &App) -> (String, String) {
             "FILTER".to_string(),
         ),
         InputMode::Benchmarks => (
-            " ↑/k:up  ↓/j:down  r:refresh  b/q/Esc:close".to_string(),
+            " ↑/k:up  ↓/j:down  H:change GPU  r:refresh  b/q/Esc:close".to_string(),
             "BENCHMARKS".to_string(),
         ),
     }
@@ -3186,6 +3186,7 @@ fn draw_help_popup(frame: &mut Frame, app: &App, tc: &ThemeColors) {
         ("  r", "Refresh installed models"),
         ("  p", "Plan mode"),
         ("  b", "Benchmarks (localmaxxing.com)"),
+        ("  H", "Change GPU (in benchmarks view)"),
         ("  y", "Copy model name"),
         ("", ""),
         ("Comparison", ""),
@@ -3957,24 +3958,43 @@ fn draw_benchmarks(frame: &mut Frame, app: &mut App, area: Rect, tc: &ThemeColor
         return;
     }
 
-    if app.bench_entries.is_empty() {
-        let empty = Paragraph::new(Line::from(Span::styled(
-            "  No benchmark results found for your hardware configuration.",
-            Style::default().fg(tc.muted),
-        )));
+    if app.bench_entries.is_empty() && !app.bench_hw_picker_open {
+        let empty = Paragraph::new(vec![
+            Line::from(Span::styled(
+                "  No benchmark results found for this hardware configuration.",
+                Style::default().fg(tc.muted),
+            )),
+            Line::from(""),
+            Line::from(Span::styled(
+                "  Press H to pick a different GPU/chip",
+                Style::default().fg(tc.muted),
+            )),
+        ]);
         frame.render_widget(empty, inner);
+        if app.bench_hw_picker_open {
+            draw_bench_hw_picker(frame, app, tc);
+        }
         return;
     }
 
     // Header + summary line
-    let hw_desc = app.specs.gpu_name.as_deref().unwrap_or(&app.specs.cpu_name);
+    let hw_desc = if let Some(ref label) = app.bench_hw_label {
+        label.clone()
+    } else {
+        app.specs
+            .gpu_name
+            .as_deref()
+            .unwrap_or(&app.specs.cpu_name)
+            .to_string()
+    };
     let summary = Line::from(vec![
         Span::styled("  Hardware: ", Style::default().fg(tc.muted)),
-        Span::styled(hw_desc, Style::default().fg(tc.fg).bold()),
+        Span::styled(&hw_desc, Style::default().fg(tc.fg).bold()),
         Span::styled(
             format!("  ({} results)", app.bench_total),
             Style::default().fg(tc.muted),
         ),
+        Span::styled("  H:change GPU", Style::default().fg(tc.accent)),
     ]);
 
     // Table header
@@ -4097,6 +4117,86 @@ fn draw_benchmarks(frame: &mut Frame, app: &mut App, area: Rect, tc: &ThemeColor
 
     frame.render_widget(Paragraph::new(summary), chunks[0]);
     frame.render_widget(table, chunks[1]);
+
+    // Draw hardware picker popup overlay if open
+    if app.bench_hw_picker_open {
+        draw_bench_hw_picker(frame, app, tc);
+    }
+}
+
+fn draw_bench_hw_picker(frame: &mut Frame, app: &App, tc: &ThemeColors) {
+    use llmfit_core::benchmarks::HardwarePreset;
+
+    let presets = HardwarePreset::all();
+    let area = frame.area();
+
+    // +3 for border + "My Hardware" entry + bottom hint
+    let popup_height = (presets.len() as u16 + 5).min(area.height.saturating_sub(6));
+    let popup_width = 42u16.min(area.width.saturating_sub(4));
+
+    let x = area.x + (area.width.saturating_sub(popup_width)) / 2;
+    let y = area.y + (area.height.saturating_sub(popup_height)) / 2;
+    let popup_area = Rect::new(x, y, popup_width, popup_height);
+
+    frame.render_widget(Clear, popup_area);
+
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(tc.accent))
+        .title(" Select Hardware ")
+        .title_style(Style::default().fg(tc.accent).add_modifier(Modifier::BOLD));
+
+    let inner = block.inner(popup_area);
+    frame.render_widget(block, popup_area);
+
+    let inner_height = inner.height as usize;
+
+    // Total items: 1 ("My Hardware") + presets.len()
+    let total_items = 1 + presets.len();
+
+    // Scrolling: keep cursor in view
+    let scroll = if app.bench_hw_picker_cursor >= inner_height {
+        app.bench_hw_picker_cursor.saturating_sub(inner_height - 1)
+    } else {
+        0
+    };
+
+    let mut lines: Vec<Line> = Vec::new();
+
+    for i in scroll..total_items.min(scroll + inner_height) {
+        let is_selected = i == app.bench_hw_picker_cursor;
+        let marker = if is_selected { "▶ " } else { "  " };
+
+        let (label, is_current) = if i == 0 {
+            (
+                "My Hardware (auto-detect)".to_string(),
+                app.bench_hw_label.is_none(),
+            )
+        } else {
+            let p = &presets[i - 1];
+            (
+                p.label.to_string(),
+                app.bench_hw_label.as_deref() == Some(p.label),
+            )
+        };
+
+        let style = if is_selected {
+            Style::default().bg(tc.highlight_bg).fg(tc.fg)
+        } else if is_current {
+            Style::default().fg(tc.good)
+        } else {
+            Style::default().fg(tc.fg)
+        };
+
+        let check = if is_current { " ●" } else { "" };
+
+        lines.push(Line::from(Span::styled(
+            format!("{}{}{}", marker, label, check),
+            style,
+        )));
+    }
+
+    frame.render_widget(Paragraph::new(lines), inner);
 }
 
 fn draw_filter_popup(frame: &mut Frame, app: &App, tc: &ThemeColors) {

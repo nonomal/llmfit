@@ -36,6 +36,7 @@
     <tspan dx="8">vLLM:</tspan> <tspan fill="#44cc44">&#x2713;</tspan> <tspan fill="#666680">(3 models)</tspan>
     <tspan dx="20">Context cap:</tspan> <tspan fill="#ccccdd">8,192</tspan>
   </text>
+
   <!-- Search/filter bar -->
   <rect x="8" y="96" width="1004" height="24" rx="4" fill="#252636" stroke="#444466" stroke-width="0.5"/>
   <text y="112" x="16" fill="#666680" font-size="11.5">
@@ -55,6 +56,7 @@
   <text y="158" x="20" fill="#666680" font-size="12">
     Hardware: <tspan fill="#ccccdd" font-weight="bold">NVIDIA GeForce RTX 4090</tspan>
     <tspan fill="#666680">  (47 results)</tspan>
+    <tspan fill="#00cccc">  H:change GPU</tspan>
   </text>
 
   <!-- Table header -->
@@ -124,8 +126,8 @@
     <tspan x="860" fill="#ccccdd">inferking</tspan>
   </text>
 
-  <!-- Row 5 -->
-  <text y="284" font-size="12">
+  <!-- Row 5 (dimmed behind popup) -->
+  <text y="284" font-size="12" opacity="0.3">
     <tspan x="20" fill="#ccccdd"> google/gemma-2-27b-it</tspan>
     <tspan x="320" fill="#ccccdd">llama.cpp</tspan>
     <tspan x="420" fill="#ccccdd">Q4_K_M</tspan>
@@ -137,8 +139,8 @@
     <tspan x="860" fill="#ccccdd">ggml_fan *</tspan>
   </text>
 
-  <!-- Row 6 -->
-  <text y="304" font-size="12">
+  <!-- Rows 6-14 dimmed behind popup -->
+  <text y="304" font-size="12" opacity="0.15">
     <tspan x="20" fill="#ccccdd"> Qwen/Qwen2.5-7B-Instruct</tspan>
     <tspan x="320" fill="#ccccdd">ollama</tspan>
     <tspan x="420" fill="#ccccdd">Q8_0</tspan>
@@ -149,9 +151,7 @@
     <tspan x="800" fill="#ccccdd">4096</tspan>
     <tspan x="860" fill="#ccccdd">qwen_user</tspan>
   </text>
-
-  <!-- Row 7 -->
-  <text y="324" font-size="12">
+  <text y="324" font-size="12" opacity="0.15">
     <tspan x="20" fill="#ccccdd"> deepseek-ai/DeepSeek-R1-0528</tspan>
     <tspan x="320" fill="#ccccdd">vllm</tspan>
     <tspan x="420" fill="#ccccdd">FP8</tspan>
@@ -162,101 +162,60 @@
     <tspan x="800" fill="#ccccdd">8192</tspan>
     <tspan x="860" fill="#ccccdd">ds_labs *</tspan>
   </text>
-
-  <!-- Row 8 -->
-  <text y="344" font-size="12">
+  <text y="344" font-size="12" opacity="0.15">
     <tspan x="20" fill="#ccccdd"> microsoft/Phi-4</tspan>
     <tspan x="320" fill="#ccccdd">llama.cpp</tspan>
-    <tspan x="420" fill="#ccccdd">Q4_K_M</tspan>
     <tspan x="505" fill="#44cc44">82.9</tspan>
-    <tspan x="575" fill="#ccccdd">64.3</tspan>
-    <tspan x="665" fill="#ccccdd">63ms</tspan>
-    <tspan x="730" fill="#ccccdd">9.2G</tspan>
-    <tspan x="800" fill="#ccccdd">8192</tspan>
-    <tspan x="860" fill="#ccccdd">phi_fan</tspan>
   </text>
-
-  <!-- Row 9 -->
-  <text y="364" font-size="12">
+  <text y="364" font-size="12" opacity="0.15">
     <tspan x="20" fill="#ccccdd"> NousResearch/Hermes-3-Llama-3.1…</tspan>
     <tspan x="320" fill="#ccccdd">llama.cpp</tspan>
-    <tspan x="420" fill="#ccccdd">Q5_K_M</tspan>
     <tspan x="505" fill="#44cc44">109.7</tspan>
-    <tspan x="575" fill="#ccccdd">85.4</tspan>
-    <tspan x="665" fill="#ccccdd">47ms</tspan>
-    <tspan x="730" fill="#ccccdd">7.0G</tspan>
-    <tspan x="800" fill="#ccccdd">4096</tspan>
-    <tspan x="860" fill="#ccccdd">nous_dev *</tspan>
   </text>
-
-  <!-- Row 10 -->
-  <text y="384" font-size="12">
+  <text y="384" font-size="12" opacity="0.15">
     <tspan x="20" fill="#ccccdd"> mistralai/Mistral-7B-Instruct-v…</tspan>
     <tspan x="320" fill="#ccccdd">ollama</tspan>
-    <tspan x="420" fill="#ccccdd">Q4_K_M</tspan>
     <tspan x="505" fill="#44cc44">134.1</tspan>
-    <tspan x="575" fill="#ccccdd">101.6</tspan>
-    <tspan x="665" fill="#ccccdd">39ms</tspan>
-    <tspan x="730" fill="#ccccdd">5.1G</tspan>
-    <tspan x="800" fill="#ccccdd">8192</tspan>
-    <tspan x="860" fill="#ccccdd">ollama_usr</tspan>
   </text>
 
-  <!-- Row 11 -->
-  <text y="404" font-size="12">
-    <tspan x="20" fill="#ccccdd"> Qwen/Qwen3-14B</tspan>
-    <tspan x="320" fill="#ccccdd">llama.cpp</tspan>
-    <tspan x="420" fill="#ccccdd">Q4_K_M</tspan>
-    <tspan x="505" fill="#44cc44">68.3</tspan>
-    <tspan x="575" fill="#ccccdd">52.1</tspan>
-    <tspan x="665" fill="#ccccdd">78ms</tspan>
-    <tspan x="730" fill="#ccccdd">10.4G</tspan>
-    <tspan x="800" fill="#ccccdd">8192</tspan>
-    <tspan x="860" fill="#ccccdd">qw3_bench</tspan>
-  </text>
+  <!-- ═══ Hardware Picker Popup ═══ -->
+  <!-- Popup shadow -->
+  <rect x="312" y="160" width="396" height="310" rx="6" fill="#111122" opacity="0.6"/>
+  <!-- Popup background -->
+  <rect x="308" y="156" width="396" height="310" rx="6" fill="#1e1f2b" stroke="#00cccc" stroke-width="1.5"/>
+  <!-- Popup title -->
+  <text x="322" y="174" fill="#00cccc" font-weight="bold" font-size="12.5"> Select Hardware </text>
+  <line x1="314" y1="180" x2="698" y2="180" stroke="#333355" stroke-width="0.5"/>
 
-  <!-- Row 12 -->
-  <text y="424" font-size="12">
-    <tspan x="20" fill="#ccccdd"> meta-llama/Llama-3.3-70B-Instru…</tspan>
-    <tspan x="320" fill="#ccccdd">vllm</tspan>
-    <tspan x="420" fill="#ccccdd">AWQ-4bit</tspan>
-    <tspan x="505" fill="#44cc44">18.7</tspan>
-    <tspan x="575" fill="#ccccdd">14.2</tspan>
-    <tspan x="665" fill="#ccccdd">520ms</tspan>
-    <tspan x="730" fill="#ccccdd">23.1G</tspan>
-    <tspan x="800" fill="#ccccdd">4096</tspan>
-    <tspan x="860" fill="#ccccdd">llm_racer *</tspan>
-  </text>
+  <!-- Picker entries -->
+  <!-- Entry 0: My Hardware (current = green dot) -->
+  <text y="198" x="322" fill="#44cc44" font-size="12">  My Hardware (auto-detect) ●</text>
 
-  <!-- Row 13 -->
-  <text y="444" font-size="12">
-    <tspan x="20" fill="#ccccdd"> google/gemma-3-12b-it</tspan>
-    <tspan x="320" fill="#ccccdd">llama.cpp</tspan>
-    <tspan x="420" fill="#ccccdd">Q5_K_M</tspan>
-    <tspan x="505" fill="#44cc44">71.6</tspan>
-    <tspan x="575" fill="#ccccdd">55.8</tspan>
-    <tspan x="665" fill="#ccccdd">72ms</tspan>
-    <tspan x="730" fill="#ccccdd">10.8G</tspan>
-    <tspan x="800" fill="#ccccdd">8192</tspan>
-    <tspan x="860" fill="#ccccdd">gemma_usr</tspan>
-  </text>
+  <!-- Section: NVIDIA Consumer -->
+  <text y="218" x="322" fill="#ccccdd" font-size="12">  RTX 5090 (32 GB)</text>
+  <text y="236" x="322" fill="#ccccdd" font-size="12">  RTX 5080 (16 GB)</text>
 
-  <!-- Row 14 -->
-  <text y="464" font-size="12">
-    <tspan x="20" fill="#ccccdd"> meta-llama/Llama-4-Scout-17B-16…</tspan>
-    <tspan x="320" fill="#ccccdd">llama.cpp</tspan>
-    <tspan x="420" fill="#ccccdd">Q4_K_M</tspan>
-    <tspan x="505" fill="#44cc44">31.2</tspan>
-    <tspan x="575" fill="#ccccdd">22.7</tspan>
-    <tspan x="665" fill="#ccccdd">245ms</tspan>
-    <tspan x="730" fill="#ccccdd">19.8G</tspan>
-    <tspan x="800" fill="#ccccdd">8192</tspan>
-    <tspan x="860" fill="#ccccdd">scout_tst</tspan>
-  </text>
+  <!-- Entry 3: RTX 4090 — highlighted/selected -->
+  <rect x="314" y="242" width="384" height="18" rx="2" fill="#3a5f8a" opacity="0.6"/>
+  <text y="254" x="322" fill="#ddddee" font-size="12">&#x25B6; RTX 4090 (24 GB)</text>
+
+  <text y="272" x="322" fill="#ccccdd" font-size="12">  RTX 4080 (16 GB)</text>
+  <text y="290" x="322" fill="#ccccdd" font-size="12">  RTX 4070 Ti (12 GB)</text>
+  <text y="308" x="322" fill="#ccccdd" font-size="12">  RTX 3090 (24 GB)</text>
+  <text y="326" x="322" fill="#ccccdd" font-size="12">  RTX 3080 (10 GB)</text>
+  <text y="344" x="322" fill="#ccccdd" font-size="12">  RTX 3060 (12 GB)</text>
+
+  <!-- Section: NVIDIA Datacenter -->
+  <text y="362" x="322" fill="#ccccdd" font-size="12">  A100 (80 GB)</text>
+  <text y="380" x="322" fill="#ccccdd" font-size="12">  A100 (40 GB)</text>
+  <text y="398" x="322" fill="#ccccdd" font-size="12">  H100 (80 GB)</text>
+  <text y="416" x="322" fill="#ccccdd" font-size="12">  L40S (48 GB)</text>
+  <text y="434" x="322" fill="#ccccdd" font-size="12">  T4 (16 GB)</text>
+  <text y="452" x="322" fill="#666680" font-size="11">  ↓ AMD, Apple Silicon, CPU…</text>
 
   <!-- Status bar -->
   <rect x="8" y="488" width="1004" height="24" rx="4" fill="#252636"/>
   <rect x="12" y="491" width="100" height="18" rx="3" fill="#ccaa33"/>
   <text x="62" y="504" text-anchor="middle" fill="#1e1f2b" font-weight="bold" font-size="11.5">BENCHMARKS</text>
-  <text x="120" y="504" fill="#666680" font-size="11.5"> &#x2191;/k:up  &#x2193;/j:down  r:refresh  b/q/Esc:close</text>
+  <text x="120" y="504" fill="#666680" font-size="11.5"> &#x2191;/k:up  &#x2193;/j:down  H:change GPU  r:refresh  b/q/Esc:close</text>
 </svg>

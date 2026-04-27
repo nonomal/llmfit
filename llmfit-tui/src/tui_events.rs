@@ -603,11 +603,24 @@ fn handle_filter_popup_mode(app: &mut App, key: KeyEvent) {
 }
 
 fn handle_benchmarks_mode(app: &mut App, key: KeyEvent) {
+    // Hardware picker sub-modal takes priority when open
+    if app.bench_hw_picker_open {
+        match key.code {
+            KeyCode::Esc | KeyCode::Char('q') | KeyCode::Char('H') => app.close_bench_hw_picker(),
+            KeyCode::Up | KeyCode::Char('k') => app.bench_hw_picker_up(),
+            KeyCode::Down | KeyCode::Char('j') => app.bench_hw_picker_down(),
+            KeyCode::Enter | KeyCode::Char(' ') => app.bench_hw_picker_select(),
+            _ => {}
+        }
+        return;
+    }
+
     match key.code {
         KeyCode::Esc | KeyCode::Char('q') | KeyCode::Char('b') => app.close_benchmarks(),
         KeyCode::Up | KeyCode::Char('k') => app.bench_move_up(),
         KeyCode::Down | KeyCode::Char('j') => app.bench_move_down(),
         KeyCode::Char('r') => app.bench_refresh(),
+        KeyCode::Char('H') => app.open_bench_hw_picker(),
         _ => {}
     }
 }
